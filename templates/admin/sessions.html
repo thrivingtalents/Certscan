@@ -1,0 +1,42 @@
+{% extends "admin/base.html" %}{% set nav = 'sessions' %}
+{% block title %}Sessions{% endblock %}
+{% block main %}
+<div class="head">
+  <div><h1>Sessions</h1><div class="sub">{{ events|length }} session{{ '' if events|length == 1 else 's' }} · {{ total_sent }} certificates sent{% if not smtp %} · <a href="{{ url_for('admin_email') }}">Outbox mode: emails aren't being sent yet</a>{% endif %}</div></div>
+  <div class="spacer"></div>
+  <a class="btn" href="{{ url_for('admin_new') }}">+ New session</a>
+</div>
+{% if not events %}
+<div class="card empty">
+  <h2>No sessions yet</h2>
+  <p class="muted" style="margin:8px 0 18px">Create a session, upload your certificate design and you'll get a QR code for the event.</p>
+  <a class="btn" href="{{ url_for('admin_new') }}">Create your first session</a>
+</div>
+{% else %}
+<div class="grid">
+{% for e in events %}
+  <div class="card ev">
+    <a class="thumb" href="{{ url_for('admin_participants', event_id=e.id) }}">
+      {% if e.preview_file %}<img src="{{ url_for('admin_template_png', event_id=e.id) }}" alt="">{% else %}<span class="faint small">No design uploaded</span>{% endif %}
+    </a>
+    <div class="body">
+      <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap">
+        <h2><a href="{{ url_for('admin_participants', event_id=e.id) }}" style="color:inherit;text-decoration:none">{{ e.name }}</a></h2>
+        <span class="pill {{ e.status }}">{{ 'Open' if e.status == 'open' else 'Closed' }}</span>
+      </div>
+      <div class="muted small" style="margin-top:4px">{{ e.event_date or 'No date' }} · /r/{{ e.slug }}</div>
+    </div>
+    <div class="stats">
+      <div><b>{{ e.n_total }}</b>registered</div><div><b>{{ e.n_sent }}</b>emailed</div>
+      {% if e.n_failed %}<div style="color:var(--bad)"><b style="color:var(--bad)">{{ e.n_failed }}</b>failed</div>{% endif %}
+    </div>
+    <div class="acts">
+      <a class="btn sm o" href="{{ url_for('admin_qr', event_id=e.id) }}">QR code</a>
+      <a class="btn sm o" href="{{ url_for('admin_design', event_id=e.id) }}">Design</a>
+      <form method="post" action="{{ url_for('admin_duplicate', event_id=e.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm o" title="New session with the same design">Duplicate</button></form>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
+{% endblock %}

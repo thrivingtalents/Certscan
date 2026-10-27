@@ -1,0 +1,42 @@
+{% extends "admin/base.html" %}{% set nav = 'sessions' %}{% set tab = 'qr' %}
+{% block title %}QR code{% endblock %}
+{% block main %}
+{% include "admin/_tabs.html" %}
+<div class="qrwrap">
+  <div class="poster">
+    <div class="ev-name">{{ ev.name }}</div>
+    <h2>Scan to get your<br>e-certificate</h2>
+    <div class="qr">{{ qr_svg|safe }}</div>
+    <div class="link">{{ link }}</div>
+    {% if ev.access_code %}<div class="code">Attendance code: <b>{{ ev.access_code }}</b></div>{% endif %}
+  </div>
+  <div class="stack noprint">
+    {% if ev.status != 'open' %}<div class="flash warn" style="margin:0">Registration is closed, so this code currently shows a “registration closed” page. Open it when the event starts.</div>{% endif %}
+    <div class="card pad stack">
+      <h2>Share this session</h2>
+      <div><label class="lbl">Registration link</label>
+        <div class="row" style="flex-wrap:nowrap"><input type="text" id="lnk" value="{{ link }}" readonly>
+          <button class="btn o" type="button" id="copy">Copy</button></div></div>
+      <div class="row">
+        <a class="btn" href="{{ url_for('admin_qr_file', event_id=ev.id, fmt='png') }}">Download PNG</a>
+        <a class="btn o" href="{{ url_for('admin_qr_file', event_id=ev.id, fmt='svg') }}">Download SVG</a>
+        <button class="btn o" type="button" onclick="window.print()">Print poster</button>
+        <a class="btn o" href="{{ link }}" target="_blank">Open registration page</a>
+      </div>
+      <p class="hint">Use the SVG for large prints such as banners; it stays sharp at any size. Test the QR with your own phone before printing.</p>
+    </div>
+    {% if 'localhost' in link or '127.0.0.1' in link %}
+    <div class="flash warn" style="margin:0">This link uses <b>{{ base_url }}</b>, which phones can't reach. Set <code>BASE_URL</code> to your public address before printing QR codes.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('copy').addEventListener('click', async (e) => {
+  const v = document.getElementById('lnk').value;
+  try { await navigator.clipboard.writeText(v); } catch (_) { document.getElementById('lnk').select(); document.execCommand('copy'); }
+  e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1500);
+});
+</script>
+{% endblock %}

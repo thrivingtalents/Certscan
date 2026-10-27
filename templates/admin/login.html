@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Log in · {{ app_name }}</title><link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"></head>
+<body><div class="pub"><div class="plain" style="margin-top:14vh">
+  <div class="row" style="justify-content:center;margin-bottom:22px"><span class="brand" style="color:var(--ink);margin:0"><i>{% include "_logo.html" %}</i>{{ app_name }}</span></div>
+  <form method="post" class="card pad" style="text-align:left">
+    <h2 style="margin-bottom:16px">Admin log in</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field {{ 'has-err' if error }}"><label class="lbl" for="pw">Password</label>
+      <input id="pw" type="password" name="password" autofocus autocomplete="current-password">
+      {% if error %}<div class="err">{{ error }}</div>{% endif %}</div>
+    <button class="btn block">Log in</button>
+    {% if default_pw %}<p class="hint" style="margin-top:12px">Using the default password <code>change-me</code>. Set <code>ADMIN_PASSWORD</code> in your <code>.env</code> file before going live.</p>{% endif %}
+  </form>
+</div></div></body></html>

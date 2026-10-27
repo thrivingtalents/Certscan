@@ -1,0 +1,67 @@
+{% extends "admin/base.html" %}{% set nav = 'sessions' %}{% set tab = 'design' %}
+{% block title %}Certificate design{% endblock %}
+{% block main %}
+{% include "admin/_tabs.html" %}
+<form method="post" id="designForm">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<input type="hidden" name="then" id="then" value="">
+<input type="hidden" name="name_x" id="name_x" value="{{ ev.name_x }}">
+<input type="hidden" name="name_y" id="name_y" value="{{ ev.name_y }}">
+<input type="hidden" name="name_w" id="name_w" value="{{ ev.name_w }}">
+<div class="editor">
+  <div class="stage">
+    <div class="canvas" id="canvas">
+      <img id="tpl" src="{{ url_for('admin_template_png', event_id=ev.id) }}" alt="Certificate template" draggable="false">
+      <div class="guide" id="guide"></div>
+      <div class="namebox" id="box" tabindex="0" aria-label="Name position. Drag, or use arrow keys.">
+        <div class="tag">[FULL NAME]</div><span id="txt"></span>
+        <div class="h l" data-h="l"></div><div class="h r" data-h="r"></div>
+      </div>
+    </div>
+    <p class="hint" style="margin-top:12px">Drag the box to where the name should print. Drag the side handles to set the maximum width; long names shrink to fit. Arrow keys nudge it.</p>
+  </div>
+  <div class="card panel">
+    <div class="sec">
+      <label class="lbl" for="sample">Try a name</label>
+      <input type="text" id="sample" value="Nur Aisyah binti Rahman">
+    </div>
+    <div class="sec">
+      <label class="lbl" for="font">Font</label>
+      <select name="name_font" id="font">
+        {% for key, f in fonts.items() %}<option value="{{ key }}" data-css="{{ f[2] }}" {{ 'selected' if ev.name_font == key }}>{{ f[0] }}</option>{% endfor %}
+      </select>
+      <div class="row" style="margin-top:14px;flex-wrap:nowrap">
+        <div style="flex:1"><label class="lbl" for="size">Size</label><input type="range" name="name_size" id="size" min="0.02" max="0.16" step="0.001" value="{{ ev.name_size }}"></div>
+        <div><label class="lbl" for="color">Colour</label><input type="color" name="name_color" id="color" value="{{ ev.name_color }}"></div>
+      </div>
+    </div>
+    <div class="sec">
+      <label class="lbl">Alignment</label>
+      <div class="seg">
+        {% for v, l in [('left','Left'),('center','Centre'),('right','Right')] %}<label><input type="radio" name="name_align" value="{{ v }}" {{ 'checked' if ev.name_align == v }}><span>{{ l }}</span></label>{% endfor %}
+      </div>
+      <label class="lbl" style="margin-top:14px">Letter case</label>
+      <div class="seg">
+        {% for v, l in [('as_typed','As typed'),('title','Title Case'),('upper','CAPS')] %}<label><input type="radio" name="name_case" value="{{ v }}" {{ 'checked' if ev.name_case == v }}><span>{{ l }}</span></label>{% endfor %}
+      </div>
+      <p class="hint">Title Case fixes “nur aisyah BINTI rahman” into “Nur Aisyah binti Rahman”.</p>
+    </div>
+    <div class="sec">
+      <label class="check"><input type="checkbox" name="show_cert_id" id="showid" value="1" {{ 'checked' if ev.show_cert_id }}>
+        <span>Print certificate ID and verify link in the bottom-right corner</span></label>
+    </div>
+    <div class="sec stack">
+      <button class="btn block" type="submit" onclick="document.getElementById('then').value='qr'">Save and get QR code</button>
+      <div class="row" style="flex-wrap:nowrap">
+        <button class="btn o" type="submit" style="flex:1">Save</button>
+        <button class="btn o" type="button" id="pdfBtn" style="flex:1">Preview PDF</button>
+      </div>
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>window.PDF_URL = "{{ url_for('admin_sample', event_id=ev.id) }}";</script>
+<script src="{{ url_for('static', filename='editor.js') }}"></script>
+{% endblock %}

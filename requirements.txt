@@ -1,0 +1,8 @@
+Flask>=3.0
+reportlab>=4.0
+pypdf>=3.17
+pypdfium2>=4.20
+Pillow>=10.0
+cryptography>=42
+gunicorn>=21.2 ; platform_system != "Windows"
+tzdata>=2024.1

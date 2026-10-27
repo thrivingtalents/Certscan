@@ -1,0 +1,15 @@
+<div class="crumb"><a href="{{ url_for('admin_home') }}">Sessions</a> / {{ ev.name }}</div>
+<div class="head">
+  <div><h1>{{ ev.name }}</h1><div class="sub">{{ ev.event_date or 'No date set' }} · <span class="pill {{ ev.status }}">{{ 'Open' if ev.status == 'open' else 'Closed' }}</span></div></div>
+  <div class="spacer"></div>
+  <form method="post" action="{{ url_for('admin_toggle', event_id=ev.id) }}" class="noprint">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ request.path }}">
+    <button class="btn o">{{ 'Close registration' if ev.status == 'open' else 'Open registration' }}</button>
+  </form>
+</div>
+<nav class="tabs">
+  <a href="{{ url_for('admin_participants', event_id=ev.id) }}" class="{{ 'on' if tab == 'people' }}">Participants</a>
+  <a href="{{ url_for('admin_design', event_id=ev.id) }}" class="{{ 'on' if tab == 'design' }}">Certificate design</a>
+  <a href="{{ url_for('admin_qr', event_id=ev.id) }}" class="{{ 'on' if tab == 'qr' }}">QR code</a>
+  <a href="{{ url_for('admin_edit', event_id=ev.id) }}" class="{{ 'on' if tab == 'settings' }}">Settings &amp; email</a>
+</nav>

@@ -1,0 +1,25 @@
+{% extends "public/base.html" %}
+{% block title %}Verify a certificate{% endblock %}
+{% block page %}
+<div class="plain" style="text-align:left">
+  <div class="row" style="justify-content:center;margin-bottom:22px"><span class="brand" style="color:var(--ink);margin:0"><i>{% include "_logo.html" %}</i>{{ app_name }}</span></div>
+  <div class="card pad">
+    <h2 style="margin-bottom:14px">Verify a certificate</h2>
+    <form method="get" action="{{ url_for('verify') }}" class="row" style="flex-wrap:nowrap">
+      <input type="text" name="code" value="{{ code }}" placeholder="Certificate ID, e.g. 7K2QX9MB" autocapitalize="characters" maxlength="12">
+      <button class="btn">Check</button>
+    </form>
+    {% if code %}
+      {% if result %}
+      <div style="margin-top:18px;padding:16px;border-radius:10px;background:var(--ok-soft);color:var(--ok-ink)">
+        <div style="font-weight:700;margin-bottom:6px">Valid certificate</div>
+        <div style="color:var(--ink)">Issued to <b>{{ result.full_name }}</b><br>for <b>{{ result.event_name }}</b>{% if result.event_date %} ({{ result.event_date }}){% endif %}<br>
+        <span class="muted small">Certificate ID {{ result.cert_code }} · issued {{ result.created_at|localtime('%d %b %Y') }}</span></div>
+      </div>
+      {% else %}
+      <div style="margin-top:18px;padding:16px;border-radius:10px;background:var(--bad-soft);color:var(--bad-ink)">No certificate found with ID <b>{{ code }}</b>. Check the ID for typos.</div>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

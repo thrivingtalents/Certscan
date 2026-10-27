@@ -1,0 +1,9 @@
+{% extends "public/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page %}
+<div class="plain">
+  <div class="row" style="justify-content:center;margin-bottom:22px"><span class="brand" style="color:var(--ink);margin:0"><i>{% include "_logo.html" %}</i>{{ app_name }}</span></div>
+  <div class="card pad"><h2 style="margin-bottom:8px">{{ title }}</h2><p class="muted">{{ message }}</p>
+  {% if admin_link %}<p class="small" style="margin-top:16px"><a href="{{ url_for('admin_home') }}">Organiser login</a> · <a href="{{ url_for('verify') }}">Verify a certificate</a></p>{% endif %}</div>
+</div>
+{% endblock %}

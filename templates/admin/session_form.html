@@ -1,0 +1,57 @@
+{% extends "admin/base.html" %}{% set nav = 'sessions' %}{% set tab = 'settings' %}
+{% block title %}{{ 'Settings' if ev else 'New session' }}{% endblock %}
+{% block main %}
+{% if ev %}{% include "admin/_tabs.html" %}{% else %}
+<div class="crumb"><a href="{{ url_for('admin_home') }}">Sessions</a> / New</div>
+<div class="head"><div><h1>New session</h1><div class="sub">Each session gets its own design, QR code and participant list.</div></div></div>
+{% endif %}
+<form method="post" enctype="multipart/form-data" style="max-width:720px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card pad">
+    <h2 style="margin-bottom:16px">Session details</h2>
+    <div class="field {{ 'has-err' if errors.name }}"><label class="lbl" for="name">Session name</label>
+      <input id="name" type="text" name="name" value="{{ form.name }}" placeholder="e.g. Digital Skills Workshop 2026" required>
+      {% if errors.name %}<div class="err">{{ errors.name }}</div>{% endif %}</div>
+    <div class="row" style="align-items:flex-start;gap:16px">
+      <div class="field" style="flex:1;min-width:200px"><label class="lbl" for="date">Date</label>
+        <input id="date" type="text" name="event_date" value="{{ form.event_date or '' }}" placeholder="e.g. 27 September 2026">
+        <div class="hint">Shown to participants and usable in the email as {date}.</div></div>
+      <div class="field" style="flex:1;min-width:200px"><label class="lbl" for="code">Attendance code <span class="faint">(optional)</span></label>
+        <input id="code" type="text" name="access_code" value="{{ form.access_code or '' }}" placeholder="e.g. HALL-A">
+        <div class="hint">If set, people must type it to register. Announce it only at the venue.</div></div>
+    </div>
+    <div class="field {{ 'has-err' if errors.slug }}"><label class="lbl" for="slug">Registration link</label>
+      <div class="prefix"><span>{{ base_url }}/r/</span><input id="slug" type="text" name="slug" value="{{ form.slug or '' }}" placeholder="created from the name"></div>
+      {% if errors.slug %}<div class="err">{{ errors.slug }}</div>{% else %}<div class="hint">Changing this after printing the QR code will break the printed code.</div>{% endif %}</div>
+    <div class="field"><label class="lbl">Registration</label>
+      <div class="seg" style="max-width:280px">
+        <label><input type="radio" name="status" value="open" {{ 'checked' if form.status != 'closed' }}><span>Open</span></label>
+        <label><input type="radio" name="status" value="closed" {{ 'checked' if form.status == 'closed' }}><span>Closed</span></label>
+      </div></div>
+    <div class="field {{ 'has-err' if errors.template }}" style="margin-bottom:0"><label class="lbl" for="tpl">Certificate design {% if ev %}<span class="faint">(upload only to replace it)</span>{% endif %}</label>
+      <input id="tpl" type="file" name="template" accept=".png,.jpg,.jpeg,.webp,.pdf" {{ '' if ev else 'required' }} style="height:auto;padding:10px;border:1.5px dashed var(--line2);border-radius:var(--r);width:100%;background:var(--soft)">
+      {% if errors.template %}<div class="err">{{ errors.template }}</div>{% else %}<div class="hint">PNG, JPG or a 1-page PDF, landscape or portrait. Leave the name area blank. For sharp prints use at least 2000 px wide.</div>{% endif %}</div>
+  </div>
+
+  <div class="card pad" style="margin-top:18px">
+    <h2 style="margin-bottom:4px">Certificate email</h2>
+    <p class="muted small" style="margin-bottom:16px">Placeholders: <code>{name}</code> <code>{session}</code> <code>{date}</code> <code>{download_link}</code> <code>{cert_id}</code>. The PDF is attached automatically.</p>
+    <div class="field"><label class="lbl" for="subj">Subject</label><input id="subj" type="text" name="email_subject" value="{{ form.email_subject or '' }}"></div>
+    <div class="field" style="margin-bottom:0"><label class="lbl" for="body">Message</label><textarea id="body" name="email_body" rows="9">{{ form.email_body or '' }}</textarea></div>
+  </div>
+  <div class="row" style="margin-top:18px"><button class="btn">{{ 'Save changes' if ev else 'Create session and place the name' }}</button>
+    <a class="btn o" href="{{ url_for('admin_participants', event_id=ev.id) if ev else url_for('admin_home') }}">Cancel</a></div>
+</form>
+
+{% if ev %}
+<div class="card pad" style="max-width:720px;margin-top:34px;border-color:#F3C4C4">
+  <h2 style="margin-bottom:6px">Delete session</h2>
+  <p class="muted small" style="margin-bottom:14px">Removes the session, its design, every participant and every certificate link. Download the CSV first if you need a record.</p>
+  <form method="post" action="{{ url_for('admin_delete', event_id=ev.id) }}" class="row">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="text" name="confirm_name" placeholder="Type “{{ ev.name }}” to confirm" style="flex:1;min-width:220px">
+    <button class="btn danger">Delete permanently</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

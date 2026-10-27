@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}Admin{% endblock %} · {{ app_name }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head><body>
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="{{ url_for('admin_home') }}"><i>{% include "_logo.html" %}</i>{{ app_name }}</a>
+    <nav class="nav">
+      <a href="{{ url_for('admin_home') }}" class="{{ 'on' if nav == 'sessions' }}">Sessions</a>
+      <a href="{{ url_for('admin_email') }}" class="{{ 'on' if nav == 'email' }}">Email setup</a>
+      <a href="{{ url_for('verify') }}" target="_blank">Verify a certificate</a>
+    </nav>
+    <form method="post" action="{{ url_for('admin_logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm">Log out</button></form>
+  </aside>
+  <main class="main">
+    {% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}{% endwith %}
+    {% block main %}{% endblock %}
+  </main>
+</div>
+{% block scripts %}{% endblock %}
+</body></html>

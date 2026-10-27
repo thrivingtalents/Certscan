@@ -1,0 +1,65 @@
+{% extends "admin/base.html" %}{% set nav = 'sessions' %}{% set tab = 'people' %}
+{% block title %}Participants{% endblock %}
+{% block main %}
+{% include "admin/_tabs.html" %}
+<div class="row" style="margin-bottom:16px">
+  <form method="get" class="row" style="flex:1;flex-wrap:nowrap;max-width:560px">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search name, email or certificate ID">
+    <select name="status" style="width:150px" onchange="this.form.submit()">
+      <option value="">All ({{ total }})</option>
+      {% for s in ['sent','queued','sending','failed'] %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s|capitalize }} ({{ counts.get(s, 0) }})</option>{% endfor %}
+    </select>
+    <button class="btn o">Search</button>
+  </form>
+  <div class="spacer"></div>
+  {% if counts.get('failed') %}
+  <form method="post" action="{{ url_for('admin_resend_failed', event_id=ev.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn o">Retry {{ counts.get('failed') }} failed</button></form>
+  {% endif %}
+  <a class="btn o" href="{{ url_for('admin_csv', event_id=ev.id) }}">Export CSV</a>
+</div>
+<div class="card tablewrap">
+{% if rows %}
+<table>
+  <thead><tr><th>Name</th><th>Email</th><th>Certificate ID</th><th>Registered</th><th>Email</th><th style="width:1%"></th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+  <tr>
+    <td style="font-weight:500">{{ r.full_name }}</td>
+    <td class="muted">{{ r.email }}</td>
+    <td><a class="mono" href="{{ url_for('verify', code=r.cert_code) }}" target="_blank">{{ r.cert_code }}</a></td>
+    <td class="muted small" title="{{ r.created_at }} UTC">{{ r.created_at|localtime }}</td>
+    <td><span class="pill {{ r.email_status }}" {% if r.email_error %}title="{{ r.email_error }}"{% endif %}>{{ r.email_status|capitalize }}</span>
+      {% if r.email_status == 'failed' and r.email_error %}<div class="small" style="color:var(--bad);max-width:220px;margin-top:3px">{{ r.email_error[:90] }}</div>{% endif %}</td>
+    <td>
+      <div class="row" style="flex-wrap:nowrap;gap:6px">
+        <a class="btn sm o" href="{{ url_for('admin_pdf', pid=r.id) }}" target="_blank">PDF</a>
+        <form method="post" action="{{ url_for('admin_resend', pid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm o">Resend</button></form>
+        <details class="fix"><summary class="btn sm o">Fix</summary>
+          <form method="post" action="{{ url_for('admin_fix', pid=r.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="text" name="full_name" value="{{ r.full_name }}" aria-label="Full name">
+            <input type="email" name="email" value="{{ r.email }}" aria-label="Email">
+            <button class="btn sm">Save, regenerate and resend</button>
+          </form>
+          <form method="post" action="{{ url_for('admin_delete_participant', pid=r.id) }}" onsubmit="return confirm('Remove {{ r.full_name|e }}? Their certificate link and ID will stop working.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm danger">Remove participant</button>
+          </form>
+        </details>
+      </div>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">
+  {% if q or status %}<p class="muted">No participants match that search.</p>
+  {% else %}<h2>No registrations yet</h2><p class="muted" style="margin:8px 0 16px">Share the QR code. Registrations appear here as they come in.</p>
+  <a class="btn" href="{{ url_for('admin_qr', event_id=ev.id) }}">Get the QR code</a>{% endif %}
+</div>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+{% if counts.get('queued') or counts.get('sending') %}<script>setTimeout(() => location.reload(), 5000);</script>{% endif %}
+{% endblock %}

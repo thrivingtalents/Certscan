@@ -1,0 +1,19 @@
+{% extends "public/base.html" %}
+{% block box %}
+<p class="muted" style="margin-bottom:18px">Enter your name exactly as you want it printed on the certificate.</p>
+<form method="post" novalidate>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field {{ 'has-err' if errors.full_name }}"><label class="lbl" for="n">Full name</label>
+    <input id="n" type="text" name="full_name" value="{{ form.full_name }}" autocomplete="name" maxlength="80" required autofocus>
+    {% if errors.full_name %}<div class="err">{{ errors.full_name }}</div>{% endif %}</div>
+  <div class="field {{ 'has-err' if errors.email }}"><label class="lbl" for="e">Email address</label>
+    <input id="e" type="email" name="email" value="{{ form.email }}" autocomplete="email" inputmode="email" required>
+    {% if errors.email %}<div class="err">{{ errors.email }}</div>{% else %}<div class="hint">Your certificate will be sent here.</div>{% endif %}</div>
+  {% if ev.access_code %}
+  <div class="field {{ 'has-err' if errors.access_code }}"><label class="lbl" for="c">Attendance code</label>
+    <input id="c" type="text" name="access_code" value="{{ form.access_code }}" autocomplete="off" autocapitalize="characters" required>
+    {% if errors.access_code %}<div class="err">{{ errors.access_code }}</div>{% else %}<div class="hint">Announced at the event.</div>{% endif %}</div>
+  {% endif %}
+  <button class="btn block" style="margin-top:6px">Continue</button>
+</form>
+{% endblock %}

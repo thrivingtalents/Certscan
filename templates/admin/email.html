@@ -1,0 +1,75 @@
+{% extends "admin/base.html" %}{% set nav = 'email' %}
+{% block title %}Email setup{% endblock %}
+{% block main %}
+<div class="head"><div><h1>Email setup</h1><div class="sub">Who certificates come from, and the mail server that sends them. Changes apply straight away.</div></div></div>
+<div style="max-width:720px" class="stack">
+  {% if result %}<div class="flash {{ result[0] }}" style="margin:0">{{ result[1] }}</div>{% endif %}
+  {% if cfg.PASSWORD_UNREADABLE %}<div class="flash warn" style="margin:0">The saved mail password can't be read because the app's SECRET_KEY changed. Enter the password again and save.</div>{% endif %}
+
+  <form method="post" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="save">
+    <div class="card pad">
+      <h2 style="margin-bottom:4px">Sender</h2>
+      <p class="muted small" style="margin-bottom:16px">What participants see in their inbox.</p>
+      <div class="row" style="align-items:flex-start;gap:16px">
+        <div class="field" style="flex:1;min-width:200px"><label class="lbl" for="from_name">Sender name</label>
+          <input id="from_name" type="text" name="from_name" value="{{ form.from_name }}" placeholder="e.g. Thriving Talents Certificates"></div>
+        <div class="field {{ 'has-err' if errors.from_email }}" style="flex:1;min-width:200px"><label class="lbl" for="from_email">Sender email</label>
+          <input id="from_email" type="email" name="from_email" value="{{ form.from_email }}" placeholder="certificates@yourdomain.com" required>
+          {% if errors.from_email %}<div class="err">{{ errors.from_email }}</div>{% endif %}</div>
+      </div>
+      <div class="field {{ 'has-err' if errors.reply_to }}"><label class="lbl" for="reply_to">Replies go to <span class="faint">(optional)</span></label>
+        <input id="reply_to" type="email" name="reply_to" value="{{ form.reply_to }}" placeholder="Same as the sender email">
+        {% if errors.reply_to %}<div class="err">{{ errors.reply_to }}</div>{% endif %}</div>
+      <div class="hint" style="margin:0">Your mail service must allow the sender email: for Brevo, add it as a verified sender; for Gmail, use the account's own address or one of its “Send mail as” addresses. Otherwise emails are rejected or the address is replaced.</div>
+    </div>
+
+    <div class="card pad">
+      <h2 style="margin-bottom:4px">Mail server</h2>
+      <p class="muted small" style="margin-bottom:16px">From your email provider's SMTP settings. Leave the server empty to keep emails in the outbox without sending them.</p>
+      <div class="row" style="align-items:flex-start;gap:16px">
+        <div class="field" style="flex:2;min-width:200px"><label class="lbl" for="smtp_host">SMTP server</label>
+          <input id="smtp_host" type="text" name="smtp_host" value="{{ form.smtp_host }}" placeholder="e.g. smtp-relay.brevo.com"></div>
+        <div class="field {{ 'has-err' if errors.smtp_port }}" style="flex:1;min-width:110px"><label class="lbl" for="smtp_port">Port</label>
+          <input id="smtp_port" type="text" inputmode="numeric" name="smtp_port" value="{{ form.smtp_port }}" placeholder="587">
+          {% if errors.smtp_port %}<div class="err">{{ errors.smtp_port }}</div>{% endif %}</div>
+      </div>
+      <div class="field"><label class="lbl">Security</label>
+        <div class="seg" style="max-width:420px">
+          <label><input type="radio" name="security" value="starttls" {{ 'checked' if form.security == 'starttls' }}><span>STARTTLS (587)</span></label>
+          <label><input type="radio" name="security" value="ssl" {{ 'checked' if form.security == 'ssl' }}><span>SSL (465)</span></label>
+          <label><input type="radio" name="security" value="none" {{ 'checked' if form.security == 'none' }}><span>None</span></label>
+        </div></div>
+      <div class="row" style="align-items:flex-start;gap:16px">
+        <div class="field" style="flex:1;min-width:200px;margin-bottom:0"><label class="lbl" for="smtp_user">Login</label>
+          <input id="smtp_user" type="text" name="smtp_user" value="{{ form.smtp_user }}" autocomplete="off"></div>
+        <div class="field" style="flex:1;min-width:200px;margin-bottom:0"><label class="lbl" for="smtp_password">Password or SMTP key</label>
+          <input id="smtp_password" type="password" name="smtp_password" value="" autocomplete="new-password"
+                 placeholder="{{ 'Saved. Type a new one to replace it' if has_password else '' }}">
+          <div class="hint">Stored encrypted and never shown again.</div></div>
+      </div>
+    </div>
+    <div class="row"><button class="btn">Save email settings</button></div>
+  </form>
+
+  <div class="card pad">
+    <h2 style="margin-bottom:4px">Send a test email</h2>
+    <p class="muted small" style="margin-bottom:12px">
+      {% if cfg.SMTP_HOST %}Sends through {{ cfg.SMTP_HOST }} as {{ cfg.MAIL_FROM }}.
+      {% else %}<span class="pill queued">Outbox mode</span> No mail server is set, so emails are saved in <code>data/outbox</code> instead of being sent.{% endif %}
+    </p>
+    <form method="post" class="row" style="flex-wrap:nowrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="test">
+      <input type="email" name="to" placeholder="you@example.com" required><button class="btn">Send test</button>
+    </form>
+  </div>
+  <div class="card pad">
+    <h2 style="margin-bottom:12px">Queue across all sessions</h2>
+    <div class="row" style="gap:28px">
+      {% for s in ['sent','queued','sending','failed'] %}<div><div style="font-size:22px;font-weight:700">{{ stats.get(s, 0) }}</div><div class="muted small">{{ s|capitalize }}</div></div>{% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

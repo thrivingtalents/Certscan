@@ -1,0 +1,15 @@
+{% extends "public/base.html" %}
+{% block heading %}Is your name correct?{% endblock %}
+{% block box %}
+<div class="preview"><img src="{{ url_for('public_preview', slug=ev.slug) }}?t={{ t }}" alt="Certificate preview with your name"></div>
+<p class="muted small" style="margin:12px 0 4px">This is exactly how your certificate will look. It will be sent to:</p>
+<p style="font-weight:500;margin-bottom:18px;word-break:break-all">{{ p.email }}</p>
+<form method="post" id="go">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button class="btn block" id="send">Yes, send my certificate</button>
+</form>
+<a class="btn o block" style="margin-top:10px" href="{{ url_for('register', slug=ev.slug) }}">Edit my details</a>
+{% endblock %}
+{% block scripts %}
+<script>document.getElementById('go').addEventListener('submit', () => { const b = document.getElementById('send'); b.disabled = true; b.innerHTML = '<span class="spin" style="border-color:rgba(255,255,255,.35);border-top-color:#fff"></span> Creating your certificate…'; });</script>
+{% endblock %}

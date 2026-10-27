@@ -1,0 +1,31 @@
+# Render Blueprint: Render reads this file to create the CertQR web service.
+# Dashboard → New → Blueprint → pick this repository.
+services:
+  - type: web
+    name: certqr
+    runtime: python
+    plan: starter            # a persistent disk needs a paid plan; free services lose every certificate on redeploy
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -w 2 --threads 4 -b 0.0.0.0:$PORT "app:create_app()"
+    healthCheckPath: /healthz
+    disk:
+      name: certqr-data
+      mountPath: /var/data   # database, certificate designs and every issued PDF
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DATA_DIR
+        value: /var/data
+      - key: SECRET_KEY        # also encrypts the saved mail password: don't change it later
+        generateValue: true
+      - key: ADMIN_PASSWORD    # Render asks for this when you create the Blueprint
+        sync: false
+      - key: APP_NAME
+        value: CertQR
+      - key: DISPLAY_TZ
+        value: Asia/Kuala_Lumpur
+      # BASE_URL is optional: without it the app uses its https://<name>.onrender.com address.
+      # Set it (e.g. https://cert.thrivingtalents.com) after adding a custom domain, before printing QR codes.
+      # Email sender and mail server are set in the admin panel under Email setup.

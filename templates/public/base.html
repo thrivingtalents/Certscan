@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>{% block title %}{{ ev.name if ev else app_name }}{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head><body>
+<div class="pub">
+  {% block page %}
+  <header class="top">
+    <div class="k">{{ ev.name }}</div>
+    <h1>{% block heading %}Get your e-certificate{% endblock %}</h1>
+    {% if ev.event_date %}<div class="d">{{ ev.event_date }}</div>{% endif %}
+  </header>
+  <section class="box">
+    {% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}{% endwith %}
+    {% block box %}{% endblock %}
+  </section>
+  {% endblock %}
+  <div class="foot">Powered by {{ app_name }}</div>
+</div>
+{% block scripts %}{% endblock %}
+</body></html>
