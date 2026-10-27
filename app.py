@@ -8,6 +8,7 @@ import hmac
 import io
 import logging
 import mimetypes
+import os
 import re
 import secrets
 import shutil
@@ -121,7 +122,22 @@ def paths(app):
 
 # ======================================================================== app factory
 
+def check_production_settings():
+    """On Render, refuse to start with settings that are unsafe or break logins."""
+    if not os.environ.get("RENDER"):
+        return
+    missing = []
+    if not os.environ.get("SECRET_KEY"):
+        # each gunicorn worker would invent its own key, so logins and forms fail at random
+        missing.append("SECRET_KEY (a long random string)")
+    if os.environ.get("ADMIN_PASSWORD", "change-me") == "change-me":
+        missing.append("ADMIN_PASSWORD (your admin login password)")
+    if missing:
+        raise RuntimeError("Set these in Render (Environment tab), then redeploy: " + "; ".join(missing))
+
+
 def create_app(overrides=None):
+    check_production_settings()
     app = Flask(__name__)
     app.config.from_object(Config)
     if overrides:
@@ -782,7 +798,6 @@ def create_app(overrides=None):
 
 
 if __name__ == "__main__":
-    import os
     application = create_app()
     application.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)),
                     debug=os.environ.get("FLASK_DEBUG") == "1", use_reloader=False)
