@@ -137,31 +137,63 @@ def format_name(name, case="as_typed"):
     return name
 
 
+TWO_LINE_SCALE = 0.8   # a name split over two lines is set a little smaller so the block stays compact
+LINE_SPACING = 1.15    # baseline-to-baseline distance, as a multiple of the font size
+
+
+def split_name(text, measure):
+    """Split text into two lines whose longer line is as short as possible.
+
+    Breaks at a space when there is one; a single long word is broken between letters.
+    measure(s) returns the width of s.
+    """
+    words = text.split(" ")
+    if len(words) > 1:
+        cands = [(" ".join(words[:i]), " ".join(words[i:])) for i in range(1, len(words))]
+    else:
+        cands = [(text[:i], text[i:]) for i in range(1, len(text))]
+    return list(min(cands, key=lambda pair: max(measure(pair[0]), measure(pair[1]))))
+
+
+def name_lines(text, font, size, max_w):
+    """Return (lines, font_size): one line if the name fits, otherwise two lines, shrunk if still too wide."""
+    width = pdfmetrics.stringWidth(text, font, size)
+    if width <= max_w:
+        return [text], size
+    if len(text) < 2:
+        return [text], size * max_w / width
+    lines = split_name(text, lambda s: pdfmetrics.stringWidth(s, font, size))
+    size2 = size * TWO_LINE_SCALE
+    widest = max(pdfmetrics.stringWidth(s, font, size2) for s in lines)
+    return lines, size2 * min(1, max_w / widest)
+
+
 def _draw_text_layer(c, ev, name, cert_code, verify_url):
     W, H = ev["page_w"], ev["page_h"]
     font = _font(ev["name_font"])
     text = format_name(name, ev["name_case"])
-    size = max(4.0, ev["name_size"] * H)
     max_w = ev["name_w"] * W
-    width = pdfmetrics.stringWidth(text, font, size)
-    if width > max_w:  # auto-shrink long names to fit the box
-        size = size * max_w / width
+    lines, size = name_lines(text, font, max(4.0, ev["name_size"] * H), max_w)
     asc, desc = pdfmetrics.getAscentDescent(font, size)
     cx = ev["name_x"] * W
     cy = H - ev["name_y"] * H
-    baseline = cy - (asc + desc) / 2
+    lead = size * LINE_SPACING
     try:
         c.setFillColor(HexColor(ev["name_color"]))
     except Exception:  # noqa: BLE001
         c.setFillColor(HexColor("#1E2A4A"))
     c.setFont(font, size)
     align = ev["name_align"]
-    if align == "left":
-        c.drawString(cx - max_w / 2, baseline, text)
-    elif align == "right":
-        c.drawRightString(cx + max_w / 2, baseline, text)
-    else:
-        c.drawCentredString(cx, baseline, text)
+    for i, line in enumerate(lines):
+        # the last line sits where a one-line name would; extra lines go above it,
+        # since designs usually have free space above the name and a rule below it
+        baseline = cy + lead * (len(lines) - 1 - i) - (asc + desc) / 2
+        if align == "left":
+            c.drawString(cx - max_w / 2, baseline, line)
+        elif align == "right":
+            c.drawRightString(cx + max_w / 2, baseline, line)
+        else:
+            c.drawCentredString(cx, baseline, line)
 
     if ev["show_cert_id"] and cert_code:
         small = _font("poppins-regular")

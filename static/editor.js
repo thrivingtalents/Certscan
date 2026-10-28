@@ -16,28 +16,44 @@
     return s;
   }
 
+  // mirror the server: one line if it fits, otherwise two balanced lines (smaller), shrunk if still too wide
+  const TWO_LINE_SCALE = 0.8, LINE_SPACING = 1.15;
+  const ctx = document.createElement("canvas").getContext("2d");
+  function nameLines(text, family, fs, maxW) {
+    const measure = (s, px) => { ctx.font = `${px}px ${family}`; return ctx.measureText(s).width; };
+    const width = measure(text, fs);
+    if (width <= maxW) return [[text], fs];
+    if (text.length < 2) return [[text], fs * maxW / width];
+    const words = text.split(" "), cands = [];
+    if (words.length > 1) for (let i = 1; i < words.length; i++) cands.push([words.slice(0, i).join(" "), words.slice(i).join(" ")]);
+    else for (let i = 1; i < text.length; i++) cands.push([text.slice(0, i), text.slice(i)]);
+    const worst = (p) => Math.max(measure(p[0], fs), measure(p[1], fs));
+    const lines = cands.reduce((a, b) => (worst(b) < worst(a) ? b : a));
+    const fs2 = fs * TWO_LINE_SCALE, widest = Math.max(...lines.map(s => measure(s, fs2)));
+    return [lines, fs2 * Math.min(1, maxW / widest)];
+  }
+
   function layout() {
     const W = img.clientWidth, H = img.clientHeight;
     if (!W || !H) return;
-    let fs = +size.value * H;
-    const bw = st.w * W, bh = Math.max(fs * 1.35, 18);
-    box.style.left = (st.x * W - bw / 2) + "px";
-    box.style.top = (st.y * H - bh / 2) + "px";
-    box.style.width = bw + "px";
-    box.style.height = bh + "px";
+    const bw = st.w * W;
     const opt = font.options[font.selectedIndex];
-    txt.style.fontFamily = `"${opt.dataset.css}", sans-serif`;
+    const family = `"${opt.dataset.css}", sans-serif`;
+    const text = applyCase(sample.value || "Nur Aisyah binti Rahman", radio("name_case"));
+    const [lines, fs] = nameLines(text, family, +size.value * H, bw);
+    // like the server, a second line goes above the first, so the box grows upwards
+    const bh1 = Math.max(fs * 1.35, 18), extra = (lines.length - 1) * fs * LINE_SPACING;
+    box.style.left = (st.x * W - bw / 2) + "px";
+    box.style.top = (st.y * H - bh1 / 2 - extra) + "px";
+    box.style.width = bw + "px";
+    box.style.height = (bh1 + extra) + "px";
+    txt.style.fontFamily = family;
     txt.style.color = color.value;
     txt.style.textAlign = radio("name_align") || "center";
-    txt.textContent = applyCase(sample.value || "Nur Aisyah binti Rahman", radio("name_case"));
-    // mirror the server's auto-shrink
+    txt.style.whiteSpace = "pre";
+    txt.style.lineHeight = String(LINE_SPACING);
     txt.style.fontSize = fs + "px";
-    for (let i = 0; i < 4; i++) {
-      const inner = box.clientWidth, used = txt.scrollWidth;
-      if (used <= inner + 0.5) break;
-      fs = fs * inner / used;
-      txt.style.fontSize = fs + "px";
-    }
+    txt.textContent = lines.join("\n");
     fx.value = st.x.toFixed(4); fy.value = st.y.toFixed(4); fw.value = st.w.toFixed(4);
   }
 

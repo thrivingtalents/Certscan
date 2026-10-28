@@ -19,7 +19,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0}
-body{font-family:Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg);font-size:14.5px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body{font-family:Poppins,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg);font-size:14.5px;line-height:1.55;-webkit-font-smoothing:antialiased;overflow-wrap:break-word}
 a{color:var(--accent-ink)}
 h1,h2,h3{margin:0;line-height:1.25}
 h1{font-size:24px;font-weight:700}

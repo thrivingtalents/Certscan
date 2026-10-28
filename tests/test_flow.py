@@ -100,7 +100,7 @@ def test_full_flow():
         pdf = user.get(f"/c/{code}/{token}")
         assert pdf.status_code == 200 and pdf.data[:4] == b"%PDF"
         text = PdfReader(io.BytesIO(pdf.data)).pages[0].extract_text()
-        assert "Nur Aisyah binti Rahman" in text, text
+        assert "Nur Aisyah binti Rahman" in " ".join(text.split()), text
         assert code in text
         assert user.get(f"/c/{code}/wrongtoken").status_code == 404
 
@@ -140,7 +140,7 @@ def test_full_flow():
         admin.post(f"/admin/participants/{pid}/fix", data={"csrf_token": t, "full_name": "Nur Aishah binti Rahman",
                                                            "email": "aisyah@example.com"})
         text = PdfReader(io.BytesIO(user.get(f"/c/{code}/{token}").data)).pages[0].extract_text()
-        assert "Nur Aishah binti Rahman" in text
+        assert "Nur Aishah binti Rahman" in " ".join(text.split())
         assert drain(app) == 1
 
         # CSRF is enforced
@@ -251,6 +251,18 @@ def test_long_name_shrinks():
     render._draw_text_layer(c, ev, "Muhammad Aiman Hakimi bin Abdul Rahman Shah", None, None)
     assert pdfmetrics.stringWidth("x", render._font("poppins-bold"), 10) > 0
     assert render.format_name("ANAND a/l MURUGAN", "title") == "Anand a/l Murugan"
+
+    # names that don't fit go onto two lines, split at a space, and each line fits the box
+    font, max_w, size = render._font("poppins-bold"), 0.3 * 842, 0.1 * 595
+    lines, fs = render.name_lines("Muhammad Aiman Hakimi bin Abdul Rahman Shah", font, size, max_w)
+    assert len(lines) == 2 and lines[0] == lines[0].strip() and "bin" in " ".join(lines)
+    assert all(pdfmetrics.stringWidth(s, font, fs) <= max_w + 0.01 for s in lines)
+    # a single long word is broken between letters
+    word = "AHAHSHHSHSHJSJJDJDDHDHDJFJJFJFJFJJFJFJFJKCJJCCJJFJCJJCJKCVJVJJVJJFKSKKSKSKXKXKKX"
+    lines, fs = render.name_lines(word, font, size, max_w)
+    assert len(lines) == 2 and "".join(lines) == word
+    # short names stay on one line at full size
+    assert render.name_lines("Ali", font, size, max_w) == (["Ali"], size)
 
 
 if __name__ == "__main__":
