@@ -8,26 +8,27 @@ Participants scan a QR code, type their name and email, check a preview, and get
 - Password login
 - Sessions: create, edit, open/close registration, duplicate (reuse a design), delete
 - Upload a certificate design as PNG, JPG or a one-page PDF
-- Drag-and-drop editor to place the `[FULL NAME]` box, with font, size, colour, alignment and letter case (As typed / Title Case / CAPS). Long names shrink automatically to fit the box.
+- Drag-and-drop editor to place the `[FULL NAME]` box, with font, size, colour, alignment and letter case (As typed / Title Case / CAPS). Names too long for one line move onto two lines.
 - Preview a sample PDF before saving
 - QR code page: printable poster, PNG and SVG downloads, copy link
-- Participants table: search, filter by email status, open PDF, resend, fix a typo (regenerates the PDF and re-sends it), remove
+- Participants table: search, filter by email status, download or view one certificate, tick several and download them as a ZIP, download all as a ZIP, resend, fix a typo (regenerates the PDF and re-sends it), remove
+- Bulk import: upload an Excel (.xlsx) or CSV file of names (with an optional Email column) and a certificate is made for every name, optionally emailed
 - CSV export (opens correctly in Excel)
 - Email setup page with a "send test email" button
 - Optional attendance code per session, so a photo of the QR alone isn't enough to register
+- Customisable thank-you page per session: heading, title, message, which buttons show, and an optional extra button (e.g. a feedback form)
 
 **Participant side** (mobile-first)
 1. Scan QR → `/r/<session-link>`
 2. Enter full name and email (plus attendance code if the session has one)
 3. See a preview of their actual certificate and confirm the spelling
-4. The PDF is generated immediately; the page shows a download button and a live "emailing… / sent" status
+4. The PDF is generated immediately; the thank-you page shows a download button and a live "emailing… / sent" status
 5. The email arrives with the PDF attached and a download link
 
 **Built in**
-- Each certificate gets an ID (e.g. `8BJDCWXS`) printed in the corner, and anyone can check it at `/v/<ID>`
 - One certificate per email per session. If someone registers again, it is re-sent to that inbox and the download link isn't shown on screen, so typing someone else's email doesn't reveal their certificate.
-- Emails go through a background queue with automatic retries (4 attempts with back-off). It's safe to run several app processes.
-- CSRF protection on every form, rate limits on registration, login and verify
+- Emails go through a background queue with automatic retries (4 attempts with back-off). Imported names get their PDFs made by the same background worker, so large lists don't time out. It's safe to run several app processes.
+- CSRF protection on every form, rate limits on registration and login
 - No external services needed to try it: without a mail server configured, emails are saved as `.eml` files in `data/outbox`
 
 ## Run it on your computer (5 minutes)
@@ -78,7 +79,7 @@ Gmail works for small tests only: it needs an App Password, it caps you at rough
 
 `MAIL_FROM` must be an address your provider has verified, e.g. `MAIL_FROM=Digital Skills Workshop <certificates@yourdomain.com>`.
 
-The sender name, sender email, reply-to address and mail server can also be changed at any time in the admin panel under **Email setup**, with no restart. Values saved there override `.env`, and the mail password is stored encrypted with `SECRET_KEY` (if `SECRET_KEY` changes, enter the password again). After changing anything, use **Email setup → Send test**. Each session's email subject and message can be edited under **Settings & email**, using `{name}`, `{session}`, `{date}`, `{download_link}` and `{cert_id}`.
+The sender name, sender email, reply-to address and mail server can also be changed at any time in the admin panel under **Email setup**, with no restart. Values saved there override `.env`, and the mail password is stored encrypted with `SECRET_KEY` (if `SECRET_KEY` changes, enter the password again). After changing anything, use **Email setup → Send test**. Each session's email subject and message can be edited under **Settings & email**, using `{name}`, `{session}`, `{date}` and `{download_link}`.
 
 ## Deploying
 
@@ -109,7 +110,8 @@ Put Nginx or Caddy in front for HTTPS. Caddy is the simplest: `cert.yourdomain.c
 ## Project layout
 
 ```
-app.py            routes: public registration, downloads, verify, admin panel
+app.py            routes: public registration, downloads, admin panel, bulk import
+bulk.py           reading names from Excel/CSV for bulk import
 render.py         template processing, name stamping, PDF → PNG previews, QR codes
 mailer.py         email building + background queue worker with retries
 db.py             SQLite schema and connection helpers

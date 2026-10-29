@@ -2,7 +2,7 @@
   const $ = (id) => document.getElementById(id);
   const img = $("tpl"), box = $("box"), txt = $("txt"), guide = $("guide"), canvas = $("canvas");
   const fx = $("name_x"), fy = $("name_y"), fw = $("name_w");
-  const size = $("size"), font = $("font"), color = $("color"), sample = $("sample"), showid = $("showid");
+  const size = $("size"), font = $("font"), color = $("color"), sample = $("sample");
   const st = { x: +fx.value, y: +fy.value, w: +fw.value };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const radio = (n) => (document.querySelector(`input[name="${n}"]:checked`) || {}).value;
@@ -109,7 +109,6 @@
       name_font: font.value, name_color: color.value, name_align: radio("name_align"),
       name_case: radio("name_case"), sample: sample.value
     });
-    if (showid.checked) q.set("show_cert_id", "1");
     window.open(window.PDF_URL + "?" + q.toString(), "_blank");
   });
 })();

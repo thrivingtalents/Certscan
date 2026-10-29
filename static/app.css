@@ -40,7 +40,7 @@ p{margin:0}
 .btn.block{width:100%;height:48px;font-size:15px}
 .btn svg{flex:none}
 label.lbl,.lbl{display:block;font-size:12.5px;font-weight:500;color:var(--muted);margin-bottom:6px}
-input[type=text],input[type=email],input[type=password],input[type=date],input[type=search],select,textarea{width:100%;height:42px;border:1.5px solid var(--line2);border-radius:var(--r);padding:0 12px;font:400 14.5px Poppins,sans-serif;color:var(--ink);background:#fff;outline:none}
+input[type=text],input[type=email],input[type=url],input[type=password],input[type=date],input[type=search],select,textarea{width:100%;height:42px;border:1.5px solid var(--line2);border-radius:var(--r);padding:0 12px;font:400 14.5px Poppins,sans-serif;color:var(--ink);background:#fff;outline:none}
 textarea{height:auto;padding:10px 12px;line-height:1.5;resize:vertical}
 input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(109,91,255,.15)}
 .field{margin-bottom:16px}
@@ -53,7 +53,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 
 .pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:12px;font-size:12px;font-weight:500;white-space:nowrap}
 .pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.85}
 .pill.open,.pill.sent{background:var(--ok-soft);color:var(--ok-ink)}
-.pill.closed{background:#EEF0F6;color:var(--muted)}
+.pill.closed,.pill.none{background:#EEF0F6;color:var(--muted)}
 .pill.queued,.pill.sending{background:var(--accent-soft);color:var(--accent-ink)}
 .pill.failed{background:var(--bad-soft);color:var(--bad-ink)}
 .flash{padding:11px 14px;border-radius:var(--r);font-size:13.5px;margin-bottom:16px;border:1px solid}
@@ -165,3 +165,5 @@ input[type=color]{width:42px;height:42px;border:1.5px solid var(--line2);border-
   .qrwrap{display:block}
   .poster{width:170mm;margin:10mm auto;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+.btn:disabled{opacity:.5;cursor:default}
+td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}

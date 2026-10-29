@@ -1,8 +1,9 @@
-"""Background email delivery.
+"""Background work: making certificates and emailing them.
 
-Registrations are written to the database with email_status='queued'. A worker
-thread claims queued rows one at a time (safe with several app processes),
-sends the certificate, and retries failures with back-off.
+Bulk-imported names are saved without a PDF; the worker thread makes those one at a
+time. Registrations are written with email_status='queued'; the worker claims queued
+rows one at a time (safe with several app processes), sends the certificate, and
+retries failures with back-off.
 """
 import base64
 import hashlib
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 
+import render
 from db import connect, now_iso
 
 log = logging.getLogger("certqr.mail")
@@ -27,10 +29,9 @@ DEFAULT_SUBJECT = "Your certificate — {session}"
 DEFAULT_BODY = (
     "Hi {name},\n\n"
     "Thank you for joining {session}. Your certificate of participation is attached to this email.\n\n"
-    "You can also download it any time here:\n{download_link}\n\n"
-    "Certificate ID: {cert_id}\n"
+    "You can also download it any time here:\n{download_link}\n"
 )
-PLACEHOLDERS = ("{name}", "{session}", "{date}", "{download_link}", "{cert_id}")
+PLACEHOLDERS = ("{name}", "{session}", "{date}", "{download_link}")
 
 
 # Mail settings an admin can change on the Email setup page. Saved values override .env.
@@ -96,7 +97,7 @@ def build_message(cfg, ev, p, pdf_bytes):
         "session": ev["name"],
         "date": ev["event_date"] or "",
         "download_link": f"{cfg['BASE_URL']}/c/{p['cert_code']}/{p['token']}",
-        "cert_id": p["cert_code"],
+        "cert_id": "",  # certificate IDs were removed; blank it in messages written before that
     }
     subject = fill(ev["email_subject"] or DEFAULT_SUBJECT, values).replace("\n", " ").strip()
     body = fill(ev["email_body"] or DEFAULT_BODY, values)
@@ -155,6 +156,7 @@ class MailWorker(threading.Thread):
         self.cfg = {k: app.config[k] for k in (
             "BASE_URL", "SECRET_KEY", "MAIL_MAX_ATTEMPTS", "MAIL_SEND_INTERVAL") + SETTING_KEYS}
         self.data_dir = Path(app.config["DATA_DIR"])
+        self.tpl_dir, self.cert_dir = self.data_dir / "templates", self.data_dir / "certs"
         self._wake = threading.Event()
         self._stop = threading.Event()
 
@@ -173,24 +175,41 @@ class MailWorker(threading.Thread):
                      "AND (next_attempt_at IS NULL OR next_attempt_at < ?)", (stale,))
         conn.commit()
         while not self._stop.is_set():
+            made = sent = False
             try:
-                did_work = self.process_one(conn)
+                made = self.make_one_pdf(conn)
+                sent = not made and self.process_one(conn)
             except Exception:  # noqa: BLE001
                 log.exception("mail worker error")
-                did_work = False
-            if did_work:
-                time.sleep(self.cfg["MAIL_SEND_INTERVAL"])
-            else:
+            if sent:
+                time.sleep(self.cfg["MAIL_SEND_INTERVAL"])  # only emails need pacing for the provider
+            elif not made:
                 self._wake.wait(timeout=3)
                 self._wake.clear()
         conn.close()
+
+    def make_one_pdf(self, conn):
+        """Make the next certificate that hasn't been made yet. Returns True if there was one."""
+        now = now_iso()
+        # a worker that died mid-way leaves pdf_claimed_at behind; after 5 minutes another takes over
+        stale = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(microsecond=0).isoformat()
+        for cand in conn.execute("SELECT id FROM participants WHERE pdf_file IS NULL "
+                                 "AND (pdf_claimed_at IS NULL OR pdf_claimed_at < ?) ORDER BY id LIMIT 5",
+                                 (stale,)).fetchall():
+            cur = conn.execute("UPDATE participants SET pdf_claimed_at=? WHERE id=? AND pdf_file IS NULL "
+                               "AND (pdf_claimed_at IS NULL OR pdf_claimed_at < ?)", (now, cand["id"], stale))
+            conn.commit()
+            if cur.rowcount == 1:
+                make_pdf(conn, cand["id"], self.tpl_dir, self.cert_dir)
+                return True
+        return False
 
     def process_one(self, conn):
         now = now_iso()
         # Claim the next due email. The status check in the UPDATE makes the claim atomic,
         # so two app processes never send the same email.
         row = None
-        for cand in conn.execute("SELECT id FROM participants WHERE email_status='queued' "
+        for cand in conn.execute("SELECT id FROM participants WHERE email_status='queued' AND pdf_file IS NOT NULL "
                                  "AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY id LIMIT 5",
                                  (now,)).fetchall():
             cur = conn.execute("UPDATE participants SET email_status='sending', email_attempts=email_attempts+1, "
@@ -225,3 +244,14 @@ class MailWorker(threading.Thread):
         conn.commit()
         log.info("certificate emailed to %s", row["email"])
         return True
+
+
+def make_pdf(conn, pid, tpl_dir, cert_dir):
+    """Render one participant's certificate, save it and record the file name. Returns the file name."""
+    p = conn.execute("SELECT * FROM participants WHERE id=?", (pid,)).fetchone()
+    ev = conn.execute("SELECT * FROM events WHERE id=?", (p["event_id"],)).fetchone()
+    name = f"{ev['id']}-{p['cert_code']}.pdf"
+    (Path(cert_dir) / name).write_bytes(render.render_certificate(ev, p["full_name"], tpl_dir))
+    conn.execute("UPDATE participants SET pdf_file=?, pdf_claimed_at=NULL WHERE id=?", (name, pid))
+    conn.commit()
+    return name

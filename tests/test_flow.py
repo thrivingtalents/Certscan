@@ -34,7 +34,7 @@ def drain(app):
     w = mailer.MailWorker(app)
     conn = connect(Path(app.config["DATA_DIR"]) / "certqr.db")
     n = 0
-    while w.process_one(conn):
+    while w.make_one_pdf(conn) or w.process_one(conn):
         n += 1
     conn.close()
     return n
@@ -69,7 +69,7 @@ def test_full_flow():
         r = admin.post(f"/admin/sessions/{ev_id}/design", data={
             "csrf_token": t, "name_x": "0.5", "name_y": "0.487", "name_w": "0.62", "name_size": "0.072",
             "name_font": "poppins-bold", "name_color": "#1E2A4A", "name_align": "center", "name_case": "title",
-            "show_cert_id": "1", "then": "qr"})
+            "then": "qr"})
         assert r.status_code == 302 and r.headers["Location"].endswith("/qr")
         qr_page = admin.get(f"/admin/sessions/{ev_id}/qr").get_data(as_text=True)
         assert "https://cert.test/r/digital-skills-workshop-2026" in qr_page and "<svg" in qr_page
@@ -96,12 +96,12 @@ def test_full_flow():
         code, token = done_url.rstrip("/").split("/")[-2:]
         assert "Certificate ready" in user.get(done_url).get_data(as_text=True)
 
-        # PDF contains the formatted name + ID
+        # PDF contains the formatted name and no certificate ID
         pdf = user.get(f"/c/{code}/{token}")
         assert pdf.status_code == 200 and pdf.data[:4] == b"%PDF"
         text = PdfReader(io.BytesIO(pdf.data)).pages[0].extract_text()
         assert "Nur Aisyah binti Rahman" in " ".join(text.split()), text
-        assert code in text
+        assert code not in text and "Certificate ID" not in text
         assert user.get(f"/c/{code}/wrongtoken").status_code == 404
 
         # email goes out (outbox mode) with the PDF attached
@@ -113,7 +113,8 @@ def test_full_flow():
         assert msg["Subject"] == "Your certificate — Digital Skills Workshop 2026"
         atts = [p for p in msg.iter_attachments()]
         assert atts and atts[0].get_content_type() == "application/pdf"
-        assert f"https://cert.test/c/{code}/{token}" in msg.get_body(("plain",)).get_content()
+        body_text = msg.get_body(("plain",)).get_content()
+        assert f"https://cert.test/c/{code}/{token}" in body_text and "Certificate ID" not in body_text
         assert user.get(done_url.replace("/done/", "/status/")).get_json()["status"] == "sent"
 
         # duplicate registration: no link revealed, email re-sent
@@ -126,15 +127,14 @@ def test_full_flow():
         assert "already have a certificate" in body and token not in body
         assert drain(app) == 1
 
-        # verify page
-        assert "Valid certificate" in user.get(f"/v/{code}").get_data(as_text=True)
-        assert "No certificate found" in user.get("/v/ZZZZZZZZ").get_data(as_text=True)
+        # the certificate ID verify page is gone
+        assert user.get(f"/v/{code}").status_code == 404 and user.get("/v").status_code == 404
 
         # admin: list, CSV, fix typo
         people = admin.get(f"/admin/sessions/{ev_id}/participants").get_data(as_text=True)
-        assert "Nur Aisyah" in people and code in people
+        assert "Nur Aisyah" in people and code not in people and "Certificate ID" not in people
         csv_txt = admin.get(f"/admin/sessions/{ev_id}/participants.csv").get_data(as_text=True)
-        assert "aisyah@example.com" in csv_txt and code in csv_txt
+        assert "aisyah@example.com" in csv_txt and "Certificate ID" not in csv_txt and "Verify" not in csv_txt
         pid = int(re.search(r"/admin/participants/(\d+)/fix", people).group(1))
         t = csrf(admin, f"/admin/sessions/{ev_id}/participants")
         admin.post(f"/admin/participants/{pid}/fix", data={"csrf_token": t, "full_name": "Nur Aishah binti Rahman",
@@ -248,7 +248,7 @@ def test_long_name_shrinks():
     from reportlab.pdfbase import pdfmetrics
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(842, 595))
-    render._draw_text_layer(c, ev, "Muhammad Aiman Hakimi bin Abdul Rahman Shah", None, None)
+    render._draw_text_layer(c, ev, "Muhammad Aiman Hakimi bin Abdul Rahman Shah")
     assert pdfmetrics.stringWidth("x", render._font("poppins-bold"), 10) > 0
     assert render.format_name("ANAND a/l MURUGAN", "title") == "Anand a/l Murugan"
 
@@ -265,7 +265,191 @@ def test_long_name_shrinks():
     assert render.name_lines("Ali", font, size, max_w) == (["Ali"], size)
 
 
+def logged_in_with_session(app, name="Bulk Workshop"):
+    """An admin client and the id of a new session using the sample template."""
+    admin = app.test_client()
+    t = csrf(admin, "/admin/login")
+    admin.post("/admin/login", data={"csrf_token": t, "password": "pw"})
+    t = csrf(admin, "/admin/sessions/new")
+    png = (ROOT / "samples" / "sample-template.png").read_bytes()
+    r = admin.post("/admin/sessions/new", data={
+        "csrf_token": t, "name": name, "event_date": "1 Nov 2026", "slug": "", "status": "open",
+        "email_subject": "", "email_body": "", "template": (io.BytesIO(png), "cert.png")},
+        content_type="multipart/form-data")
+    return admin, int(re.search(r"/sessions/(\d+)/", r.headers["Location"]).group(1))
+
+
+def test_bulk_import_and_downloads():
+    import zipfile
+    from openpyxl import Workbook
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        app = make_app(tmp)
+        admin, ev_id = logged_in_with_session(app)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["No.", "Full Name", "Email"])
+        ws.append([1, "Nur Aisyah binti Rahman", "aisyah@example.com"])
+        ws.append([2, "Tan Wei Ming", None])
+        ws.append([3, "Anand a/l Murugan", "not-an-email"])
+        ws.append([None, None, None])
+        ws.append([4, "Siti Nurhaliza", "SITI@example.com"])
+        ws.append([5, "Tan Wei Ming", None])  # same name, no email: a duplicate
+        ws.append([6, "123", None])
+        xlsx = io.BytesIO()
+        wb.save(xlsx)
+
+        url = f"/admin/sessions/{ev_id}/import"
+        t = csrf(admin, url)
+        r = admin.post(url, data={"csrf_token": t, "send_email": "1", "file": (io.BytesIO(xlsx.getvalue()), "names.xlsx")},
+                       content_type="multipart/form-data")
+        page = r.get_data(as_text=True)
+        assert "4 certificates being made" in page, page[:2000]
+        assert "Row 4" in page and "Row 7" in page and "Row 8" in page
+
+        conn = connect(Path(tmp) / "certqr.db")
+        rows = {r["full_name"]: r for r in conn.execute("SELECT * FROM participants WHERE event_id=?", (ev_id,))}
+        conn.close()
+        assert set(rows) == {"Nur Aisyah binti Rahman", "Tan Wei Ming", "Anand a/l Murugan", "Siti Nurhaliza"}
+        assert all(r["pdf_file"] is None for r in rows.values())
+        assert rows["Tan Wei Ming"]["email"] is None and rows["Tan Wei Ming"]["email_status"] == "none"
+        assert rows["Anand a/l Murugan"]["email"] is None
+        assert rows["Siti Nurhaliza"]["email"] == "siti@example.com"
+        assert rows["Siti Nurhaliza"]["email_status"] == "queued"
+
+        # the worker makes all 4 PDFs, then sends only the 2 with an email
+        assert drain(app) == 6
+        assert len(list((Path(tmp) / "outbox").glob("*.eml"))) == 2
+
+        # uploading the same file again adds nobody
+        t = csrf(admin, url)
+        r = admin.post(url, data={"csrf_token": t, "file": (io.BytesIO(xlsx.getvalue()), "names.xlsx")},
+                       content_type="multipart/form-data")
+        assert "0 certificates being made" in r.get_data(as_text=True)
+
+        # CSV with semicolons and no header row
+        t = csrf(admin, url)
+        csv_bytes = "Lim Mei Ling;mei@example.com\nAhmad Faiz;\n".encode("utf-8")
+        r = admin.post(url, data={"csrf_token": t, "file": (io.BytesIO(csv_bytes), "list.csv")},
+                       content_type="multipart/form-data")
+        assert "2 certificates being made" in r.get_data(as_text=True)
+        t = csrf(admin, url)
+        r = admin.post(url, data={"csrf_token": t, "file": (io.BytesIO(b"x"), "old.xls")},
+                       content_type="multipart/form-data", follow_redirects=True)
+        assert ".xlsx" in r.get_data(as_text=True)
+
+        # download all as a ZIP; the 2 CSV names have no PDF yet and are made on the spot
+        z = admin.get(f"/admin/sessions/{ev_id}/certificates.zip")
+        assert z.status_code == 200 and z.headers["Content-Type"] == "application/zip"
+        zf = zipfile.ZipFile(io.BytesIO(z.data))
+        assert len(zf.namelist()) == 6 and "Certificate_Tan_Wei_Ming.pdf" in zf.namelist()
+        assert all(zf.read(n)[:4] == b"%PDF" for n in zf.namelist())
+
+        # tick two and download just those; download one on its own
+        people = admin.get(f"/admin/sessions/{ev_id}/participants").get_data(as_text=True)
+        ids = re.findall(r'name="ids" value="(\d+)"', people)
+        assert len(ids) == 6 and "Not emailed" in people
+        t = csrf(admin, f"/admin/sessions/{ev_id}/participants")
+        z = admin.post(f"/admin/sessions/{ev_id}/certificates.zip", data={"csrf_token": t, "ids": ids[:2]})
+        assert len(zipfile.ZipFile(io.BytesIO(z.data)).namelist()) == 2
+        one = admin.get(f"/admin/participants/{ids[0]}/pdf?dl=1")
+        assert one.data[:4] == b"%PDF" and "attachment" in one.headers["Content-Disposition"]
+
+        # someone without an email can be given one, which sends the certificate
+        conn = connect(Path(tmp) / "certqr.db")
+        tan = conn.execute("SELECT id FROM participants WHERE full_name='Tan Wei Ming'").fetchone()["id"]
+        conn.close()
+        admin.post(f"/admin/participants/{tan}/fix", data={"csrf_token": t, "full_name": "Tan Wei Ming",
+                                                           "email": "wm@example.com"})
+        assert drain(app) == 1
+        print("bulk import checks passed")
+
+
+def test_thank_you_page():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        app = make_app(tmp)
+        admin, ev_id = logged_in_with_session(app, "Leadership Talk")
+        edit = f"/admin/sessions/{ev_id}/edit"
+        t = csrf(admin, edit)
+        form = {"csrf_token": t, "name": "Leadership Talk", "event_date": "1 Nov 2026", "slug": "leadership-talk",
+                "status": "open", "email_subject": "", "email_body": "",
+                "done_heading": "Terima kasih!", "done_title": "Well done, {first_name}",
+                "done_message": "See you at {session}.\nBring a friend.", "done_show_view": "1",
+                "done_button_label": "Give feedback", "done_button_url": "not a link"}
+        assert "full web address" in admin.post(edit, data=form).get_data(as_text=True)
+        form["done_button_url"] = "https://forms.gle/abc"
+        assert admin.post(edit, data=form).status_code == 302
+
+        preview = admin.get(f"/admin/sessions/{ev_id}/done-preview").get_data(as_text=True)
+        assert "Terima kasih!" in preview and "Well done, Nur" in preview
+
+        user = app.test_client()
+        t = csrf(user, "/r/leadership-talk")
+        user.post("/r/leadership-talk", data={"csrf_token": t, "full_name": "Ali Hassan", "email": "ali@example.com"})
+        t = csrf(user, "/r/leadership-talk/confirm")
+        done_url = user.post("/r/leadership-talk/confirm", data={"csrf_token": t}).headers["Location"]
+        page = user.get(done_url).get_data(as_text=True)
+        assert "Terima kasih!" in page and "Well done, Ali" in page and "See you at Leadership Talk." in page
+        assert 'href="https://forms.gle/abc"' in page and "Give feedback" in page
+        assert "Download PDF" not in page and "View certificate" in page
+
+        # empty boxes fall back to the defaults
+        form.update(done_heading="", done_title="", done_message="", done_button_label="", done_button_url="",
+                    done_show_download="1", csrf_token=csrf(admin, edit))
+        admin.post(edit, data=form)
+        page = user.get(done_url).get_data(as_text=True)
+        assert "You&#39;re all set" in page and "Certificate ready, Ali!" in page and "Download PDF" in page
+        print("thank-you page checks passed")
+
+
+OLD_SCHEMA = """
+CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+  event_date TEXT, status TEXT NOT NULL DEFAULT 'open', access_code TEXT, template_file TEXT,
+  template_kind TEXT, page_w REAL, page_h REAL, preview_file TEXT, name_x REAL NOT NULL DEFAULT 0.5,
+  name_y REAL NOT NULL DEFAULT 0.5, name_w REAL NOT NULL DEFAULT 0.6, name_size REAL NOT NULL DEFAULT 0.07,
+  name_font TEXT NOT NULL DEFAULT 'poppins-bold', name_color TEXT NOT NULL DEFAULT '#1E2A4A',
+  name_align TEXT NOT NULL DEFAULT 'center', name_case TEXT NOT NULL DEFAULT 'as_typed',
+  show_cert_id INTEGER NOT NULL DEFAULT 1, email_subject TEXT, email_body TEXT, created_at TEXT NOT NULL);
+CREATE TABLE participants (id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE, full_name TEXT NOT NULL,
+  email TEXT NOT NULL, cert_code TEXT NOT NULL UNIQUE, token TEXT NOT NULL, pdf_file TEXT, ip TEXT,
+  created_at TEXT NOT NULL, email_status TEXT NOT NULL DEFAULT 'queued',
+  email_attempts INTEGER NOT NULL DEFAULT 0, email_error TEXT, email_sent_at TEXT, next_attempt_at TEXT,
+  UNIQUE (event_id, email));
+CREATE INDEX idx_participants_event ON participants(event_id);
+CREATE INDEX idx_participants_mail ON participants(email_status, next_attempt_at);
+INSERT INTO events (slug, name, created_at) VALUES ('old', 'Old session', '2026-01-01');
+INSERT INTO participants (event_id, full_name, email, cert_code, token, pdf_file, created_at, email_status)
+  VALUES (1, 'Old Person', 'old@example.com', 'ABCDEFGH', 'tok', '1-ABCDEFGH.pdf', '2026-01-01', 'sent');
+"""
+
+
+def test_upgrade_old_database():
+    """A database made before emails became optional is upgraded on start."""
+    import sqlite3
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        conn = sqlite3.connect(Path(tmp) / "certqr.db")
+        conn.executescript(OLD_SCHEMA)
+        conn.close()
+        make_app(tmp)
+        conn = connect(Path(tmp) / "certqr.db")
+        assert not {r["name"]: r for r in conn.execute("PRAGMA table_info(participants)")}["email"]["notnull"]
+        assert tuple(conn.execute("SELECT full_name, email_status FROM participants").fetchone()) == ("Old Person", "sent")
+        assert conn.execute("SELECT done_show_download FROM events").fetchone()[0] == 1
+        indexes = {r["name"] for r in conn.execute("PRAGMA index_list(participants)")}
+        assert {"idx_participants_event", "idx_participants_mail"} <= indexes
+        conn.execute("INSERT INTO participants (event_id, full_name, cert_code, token, created_at) "
+                     "VALUES (1, 'No Email', 'XYZ', 't', '2026-01-02')")
+        conn.commit()
+        conn.close()
+        make_app(tmp)  # starting again changes nothing
+        print("upgrade checks passed")
+
+
 if __name__ == "__main__":
     test_full_flow()
     test_email_settings()
     test_long_name_shrinks()
+    test_bulk_import_and_downloads()
+    test_thank_you_page()
+    test_upgrade_old_database()

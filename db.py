@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 
 from flask import current_app, g
 
+PARTICIPANTS_COLUMNS = ("id, event_id, full_name, email, cert_code, token, pdf_file, ip, created_at, "
+                        "email_status, email_attempts, email_error, email_sent_at, next_attempt_at")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,9 +28,15 @@ CREATE TABLE IF NOT EXISTS events (
     name_color      TEXT NOT NULL DEFAULT '#1E2A4A',
     name_align      TEXT NOT NULL DEFAULT 'center',    -- left | center | right
     name_case       TEXT NOT NULL DEFAULT 'as_typed',  -- as_typed | upper | title
-    show_cert_id    INTEGER NOT NULL DEFAULT 1,
     email_subject   TEXT,
     email_body      TEXT,
+    done_heading    TEXT,                              -- thank-you page shown after registering;
+    done_title      TEXT,                              --   empty fields fall back to the defaults
+    done_message    TEXT,
+    done_button_label TEXT,                            -- optional extra button, e.g. a feedback form
+    done_button_url TEXT,
+    done_show_download INTEGER NOT NULL DEFAULT 1,
+    done_show_view  INTEGER NOT NULL DEFAULT 1,
     created_at      TEXT NOT NULL
 );
 
@@ -35,13 +44,14 @@ CREATE TABLE IF NOT EXISTS participants (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id        INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
     full_name       TEXT NOT NULL,
-    email           TEXT NOT NULL,
-    cert_code       TEXT NOT NULL UNIQUE,              -- public certificate ID, printed + verifiable
+    email           TEXT,                              -- empty for names imported without an email
+    cert_code       TEXT NOT NULL UNIQUE,              -- internal key used in the private download link
     token           TEXT NOT NULL,                     -- secret for the download link
-    pdf_file        TEXT,
+    pdf_file        TEXT,                              -- empty until the certificate has been made
+    pdf_claimed_at  TEXT,                              -- when a worker started making the PDF
     ip              TEXT,
     created_at      TEXT NOT NULL,
-    email_status    TEXT NOT NULL DEFAULT 'queued',    -- queued | sending | sent | failed
+    email_status    TEXT NOT NULL DEFAULT 'queued',    -- queued | sending | sent | failed | none
     email_attempts  INTEGER NOT NULL DEFAULT 0,
     email_error     TEXT,
     email_sent_at   TEXT,
@@ -90,9 +100,41 @@ def close_db(_exc=None):
         db.close()
 
 
+# columns added to events after the first release
+EVENT_COLUMNS = {
+    "done_heading": "TEXT", "done_title": "TEXT", "done_message": "TEXT", "done_button_label": "TEXT",
+    "done_button_url": "TEXT", "done_show_download": "INTEGER NOT NULL DEFAULT 1",
+    "done_show_view": "INTEGER NOT NULL DEFAULT 1",
+}
+
+
+def migrate(conn):
+    """Bring a database made by an older version up to date."""
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(events)")}
+    for name, kind in EVENT_COLUMNS.items():
+        if name not in have:
+            conn.execute(f"ALTER TABLE events ADD COLUMN {name} {kind}")
+    cols = {r["name"]: r for r in conn.execute("PRAGMA table_info(participants)")}
+    if cols["email"]["notnull"]:
+        # email used to be required; SQLite can only drop NOT NULL by rebuilding the table
+        create = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS participants"):]
+        create = create[:create.index(");") + 2]
+        conn.executescript(
+            "PRAGMA foreign_keys=OFF; BEGIN;"
+            "ALTER TABLE participants RENAME TO participants_old;"
+            f"{create}"
+            f"INSERT INTO participants ({PARTICIPANTS_COLUMNS}) SELECT {PARTICIPANTS_COLUMNS} FROM participants_old;"
+            "DROP TABLE participants_old;"
+            "COMMIT; PRAGMA foreign_keys=ON;")
+        conn.executescript(SCHEMA)  # recreate the indexes that went with the old table
+    elif "pdf_claimed_at" not in cols:
+        conn.execute("ALTER TABLE participants ADD COLUMN pdf_claimed_at TEXT")
+
+
 def init_db(app):
     conn = connect(db_path(app))
     conn.executescript(SCHEMA)
+    migrate(conn)
     conn.commit()
     conn.close()
     app.teardown_appcontext(close_db)

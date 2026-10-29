@@ -12,7 +12,9 @@ import os
 import re
 import secrets
 import shutil
+import tempfile
 import time
+import zipfile
 from collections import defaultdict, deque
 from datetime import datetime
 from email.utils import parseaddr
@@ -23,6 +25,7 @@ from pathlib import Path
 from flask import (Flask, Response, abort, flash, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
+import bulk
 import mailer
 import render
 from config import Config
@@ -113,6 +116,26 @@ def event_by_slug(slug):
     if ev is None:
         abort(404)
     return ev
+
+
+DONE_DEFAULTS = {"done_heading": "You're all set", "done_title": "Certificate ready, {first_name}!",
+                 "done_message": ""}
+DONE_PLACEHOLDERS = ("{name}", "{first_name}", "{session}", "{date}")
+# email_status values, with the label the admin panel shows
+EMAIL_STATUSES = {"sent": "Sent", "queued": "Queued", "sending": "Sending", "failed": "Failed", "none": "Not emailed"}
+DONE_FIELDS = ("done_heading", "done_title", "done_message", "done_button_label", "done_button_url",
+               "done_show_download", "done_show_view")
+
+
+def done_texts(ev, full_name):
+    """The thank-you page's heading, title and message for one participant, placeholders filled in."""
+    values = {"name": full_name, "first_name": full_name.split(" ")[0], "session": ev["name"],
+              "date": ev["event_date"] or ""}
+    return {key[5:]: mailer.fill(ev[key] or default, values) for key, default in DONE_DEFAULTS.items()}
+
+
+def safe_filename(full_name):
+    return "".join(ch if ch.isalnum() else "_" for ch in full_name).strip("_")[:60] or "Certificate"
 
 
 def paths(app):
@@ -270,7 +293,7 @@ def create_app(overrides=None):
             abort(404)
         if not limiter.allow(("prev", client_ip()), 30):
             abort(429)
-        pdf = render.render_certificate(ev, p["full_name"], None, tpl_dir)
+        pdf = render.render_certificate(ev, p["full_name"], tpl_dir)
         return Response(render.pdf_to_png(pdf, width=1000), mimetype="image/png",
                         headers={"Cache-Control": "no-store"})
 
@@ -303,8 +326,7 @@ def create_app(overrides=None):
         full_name = render.format_name(p["full_name"], ev["name_case"])
         code = new_code(db)
         token = secrets.token_urlsafe(18)
-        verify_url = f"{app.config['BASE_URL']}/v/{code}"
-        pdf = render.render_certificate(ev, full_name, code, tpl_dir, verify_url=verify_url)
+        pdf = render.render_certificate(ev, full_name, tpl_dir)
         pdf_name = f"{ev['id']}-{code}.pdf"
         (cert_dir / pdf_name).write_bytes(pdf)
         try:
@@ -326,7 +348,7 @@ def create_app(overrides=None):
         p = get_db().execute("SELECT * FROM participants WHERE cert_code=? AND event_id=?", (code, ev["id"])).fetchone()
         if p is None or not hmac.compare_digest(p["token"], token):
             abort(404)
-        return render_template("public/done.html", ev=ev, p=p)
+        return render_template("public/done.html", ev=ev, p=p, texts=done_texts(ev, p["full_name"]))
 
     @app.get("/r/<slug>/status/<code>/<token>")
     def mail_status(slug, code, token):
@@ -356,30 +378,19 @@ def create_app(overrides=None):
         p = get_db().execute("SELECT * FROM participants WHERE cert_code=?", (code,)).fetchone()
         if p is None or not hmac.compare_digest(p["token"], token):
             abort(404)
-        path = cert_dir / p["pdf_file"]
-        if not path.exists():
-            abort(404)
-        safe = "".join(ch if ch.isalnum() else "_" for ch in p["full_name"]).strip("_")[:60] or "Certificate"
-        return send_file(path, mimetype="application/pdf", as_attachment=request.args.get("dl") == "1",
-                         download_name=f"Certificate_{safe}.pdf")
+        return send_file(pdf_path(p), mimetype="application/pdf", as_attachment=request.args.get("dl") == "1",
+                         download_name=f"Certificate_{safe_filename(p['full_name'])}.pdf")
+
+    def pdf_path(p):
+        """Path of a participant's certificate, making it now if the background worker hasn't yet."""
+        if p["pdf_file"] and (cert_dir / p["pdf_file"]).exists():
+            return cert_dir / p["pdf_file"]
+        return cert_dir / mailer.make_pdf(get_db(), p["id"], tpl_dir, cert_dir)
 
     @app.route("/healthz")
     def healthz():
         get_db().execute("SELECT 1")
         return "ok"
-
-    @app.route("/v", methods=["GET", "POST"])
-    @app.get("/v/<code>")
-    def verify(code=None):
-        code = (code or request.values.get("code") or "").strip().upper()
-        result = None
-        if code:
-            if not limiter.allow(("verify", client_ip()), 30):
-                abort(429)
-            result = get_db().execute(
-                "SELECT p.full_name, p.created_at, p.cert_code, e.name AS event_name, e.event_date "
-                "FROM participants p JOIN events e ON e.id=p.event_id WHERE p.cert_code=?", (code,)).fetchone()
-        return render_template("public/verify.html", code=code, result=result)
 
     # ================================================================ admin: auth
 
@@ -427,9 +438,23 @@ def create_app(overrides=None):
     def session_form(ev=None):
         db = get_db()
         form = dict(ev) if ev else {"name": "", "event_date": "", "slug": "", "access_code": "", "status": "open",
-                                    "email_subject": mailer.DEFAULT_SUBJECT, "email_body": mailer.DEFAULT_BODY}
+                                    "email_subject": mailer.DEFAULT_SUBJECT, "email_body": mailer.DEFAULT_BODY,
+                                    "done_heading": "", "done_title": "", "done_message": "",
+                                    "done_button_label": "", "done_button_url": "",
+                                    "done_show_download": 1, "done_show_view": 1}
         errors = {}
         if request.method == "POST":
+            form["done_heading"] = (request.form.get("done_heading") or "").strip()[:120]
+            form["done_title"] = (request.form.get("done_title") or "").strip()[:160]
+            form["done_message"] = (request.form.get("done_message") or "").replace("\r\n", "\n").strip()[:3000]
+            form["done_button_label"] = (request.form.get("done_button_label") or "").strip()[:60]
+            form["done_button_url"] = (request.form.get("done_button_url") or "").strip()[:500]
+            form["done_show_download"] = 1 if request.form.get("done_show_download") else 0
+            form["done_show_view"] = 1 if request.form.get("done_show_view") else 0
+            if form["done_button_url"] and not re.match(r"^https?://\S+$", form["done_button_url"]):
+                errors["done_button_url"] = "Use a full web address starting with https://"
+            if bool(form["done_button_label"]) != bool(form["done_button_url"]):
+                errors["done_button_url"] = "Fill in both the button text and its link, or leave both empty."
             form["name"] = (request.form.get("name") or "").strip()[:120]
             form["event_date"] = (request.form.get("event_date") or "").strip()[:40]
             form["slug"] = (request.form.get("slug") or "").strip().lower()
@@ -465,6 +490,8 @@ def create_app(overrides=None):
                                "email_subject=?, email_body=? WHERE id=?",
                                (form["slug"], form["name"], form["event_date"], form["status"],
                                 form["access_code"] or None, form["email_subject"], form["email_body"], ev_id))
+                db.execute("UPDATE events SET " + ", ".join(f"{k}=?" for k in DONE_FIELDS) + " WHERE id=?",
+                           [form[k] for k in DONE_FIELDS] + [ev_id])
                 if has_upload:
                     try:
                         info = save_template_upload(ev_id, upload)
@@ -512,10 +539,9 @@ def create_app(overrides=None):
             case = f.get("name_case") if f.get("name_case") in ("as_typed", "upper", "title") else "as_typed"
             get_db().execute(
                 "UPDATE events SET name_x=?, name_y=?, name_w=?, name_size=?, name_font=?, name_color=?, "
-                "name_align=?, name_case=?, show_cert_id=? WHERE id=?",
+                "name_align=?, name_case=? WHERE id=?",
                 (fnum(f.get("name_x"), .5, 0, 1), fnum(f.get("name_y"), .5, 0, 1), fnum(f.get("name_w"), .6, .05, 1),
-                 fnum(f.get("name_size"), .07, .01, .3), font, color, align, case,
-                 1 if f.get("show_cert_id") else 0, event_id))
+                 fnum(f.get("name_size"), .07, .01, .3), font, color, align, case, event_id))
             get_db().commit()
             flash("Name position saved.", "ok")
             if f.get("then") == "qr":
@@ -542,10 +568,9 @@ def create_app(overrides=None):
                       name_size=fnum(a.get("name_size"), ev["name_size"], .01, .3),
                       name_font=a.get("name_font") if a.get("name_font") in render.FONTS else ev["name_font"],
                       name_color=a.get("name_color") if HEX_RE.match(a.get("name_color", "")) else ev["name_color"],
-                      name_align=a.get("name_align", ev["name_align"]), name_case=a.get("name_case", ev["name_case"]),
-                      show_cert_id=1 if a.get("show_cert_id") else 0)
+                      name_align=a.get("name_align", ev["name_align"]), name_case=a.get("name_case", ev["name_case"]))
         name = clean_name(a.get("sample")) or "Nur Aisyah binti Rahman"
-        pdf = render.render_certificate(ev, name, "SAMPLE01", tpl_dir, verify_url=f"{app.config['BASE_URL']}/v/SAMPLE01")
+        pdf = render.render_certificate(ev, name, tpl_dir)
         return Response(pdf, mimetype="application/pdf", headers={"Cache-Control": "no-store"})
 
     @app.get("/admin/sessions/<int:event_id>/qr")
@@ -585,13 +610,12 @@ def create_app(overrides=None):
         db = get_db()
         name = f"{ev['name']} (copy)"
         slug = unique_slug(db, slugify(name))
+        copied = ("name_x", "name_y", "name_w", "name_size", "name_font", "name_color", "name_align", "name_case",
+                  "email_subject", "email_body") + DONE_FIELDS
         cur = db.execute(
-            "INSERT INTO events (slug, name, event_date, status, access_code, name_x, name_y, name_w, name_size, "
-            "name_font, name_color, name_align, name_case, show_cert_id, email_subject, email_body, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (slug, name, "", "closed", None, ev["name_x"], ev["name_y"], ev["name_w"], ev["name_size"],
-             ev["name_font"], ev["name_color"], ev["name_align"], ev["name_case"], ev["show_cert_id"],
-             ev["email_subject"], ev["email_body"], now_iso()))
+            f"INSERT INTO events (slug, name, event_date, status, access_code, created_at, {', '.join(copied)}) "
+            f"VALUES ({', '.join('?' * (6 + len(copied)))})",
+            [slug, name, "", "closed", None, now_iso()] + [ev[k] for k in copied])
         new_id = cur.lastrowid
         if ev["template_file"]:
             stem = f"event-{new_id}-{secrets.token_hex(4)}"
@@ -635,16 +659,18 @@ def create_app(overrides=None):
         sql = "SELECT * FROM participants WHERE event_id=?"
         args = [event_id]
         if q:
-            sql += " AND (full_name LIKE ? OR email LIKE ? OR cert_code LIKE ?)"
-            args += [f"%{q}%"] * 3
-        if status in ("queued", "sending", "sent", "failed"):
+            sql += " AND (full_name LIKE ? OR email LIKE ?)"
+            args += [f"%{q}%"] * 2
+        if status in EMAIL_STATUSES:
             sql += " AND email_status=?"
             args.append(status)
-        rows = get_db().execute(sql + " ORDER BY id DESC LIMIT 1000", args).fetchall()
+        rows = get_db().execute(sql + " ORDER BY id DESC LIMIT 2000", args).fetchall()
         counts = {r["email_status"]: r["n"] for r in get_db().execute(
             "SELECT email_status, COUNT(*) n FROM participants WHERE event_id=? GROUP BY email_status", (event_id,))}
+        making = get_db().execute("SELECT COUNT(*) FROM participants WHERE event_id=? AND pdf_file IS NULL",
+                                  (event_id,)).fetchone()[0]
         return render_template("admin/participants.html", ev=ev, rows=rows, q=q, status=status, counts=counts,
-                               total=sum(counts.values()))
+                               total=sum(counts.values()), making=making, statuses=EMAIL_STATUSES)
 
     @app.get("/admin/sessions/<int:event_id>/participants.csv")
     @admin_required
@@ -655,12 +681,13 @@ def create_app(overrides=None):
         buf.write("﻿")  # so Excel reads UTF-8 names correctly
         w = csv.writer(buf)
         zone = app.config["DISPLAY_TZ"]
-        w.writerow(["Full name", "Email", "Certificate ID", f"Registered at ({zone})", "Email status", f"Email sent at ({zone})",
-                    "Download link", "Verify link"])
+        w.writerow(["Full name", "Email", f"Added at ({zone})", "Email status", f"Email sent at ({zone})",
+                    "Download link"])
         base = app.config["BASE_URL"]
         for r in rows:
-            w.writerow([r["full_name"], r["email"], r["cert_code"], localtime(r["created_at"], "%Y-%m-%d %H:%M"),
-                        r["email_status"], localtime(r["email_sent_at"], "%Y-%m-%d %H:%M"), f"{base}/c/{r['cert_code']}/{r['token']}", f"{base}/v/{r['cert_code']}"])
+            w.writerow([r["full_name"], r["email"] or "", localtime(r["created_at"], "%Y-%m-%d %H:%M"),
+                        EMAIL_STATUSES.get(r["email_status"], r["email_status"]),
+                        localtime(r["email_sent_at"], "%Y-%m-%d %H:%M"), f"{base}/c/{r['cert_code']}/{r['token']}"])
         return Response(buf.getvalue(), mimetype="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="participants-{ev["slug"]}.csv"'})
 
@@ -674,6 +701,9 @@ def create_app(overrides=None):
     @admin_required
     def admin_resend(pid):
         p = participant_or_404(pid)
+        if not p["email"]:
+            flash(f"{p['full_name']} has no email address. Add one with Fix first.", "warn")
+            return redirect(url_for("admin_participants", event_id=p["event_id"]))
         get_db().execute("UPDATE participants SET email_status='queued', email_attempts=0, next_attempt_at=NULL, "
                          "email_error=NULL WHERE id=?", (pid,))
         get_db().commit()
@@ -694,45 +724,157 @@ def create_app(overrides=None):
     @app.post("/admin/participants/<int:pid>/fix")
     @admin_required
     def admin_fix(pid):
-        """Correct a typo in a name or email, regenerate the PDF and send it again."""
+        """Correct a typo in a name or email, regenerate the PDF and send it again (if there is an email)."""
         p = participant_or_404(pid)
         ev = event_by_id(p["event_id"])
         name = clean_name(request.form.get("full_name")) or p["full_name"]
-        email = (request.form.get("email") or p["email"]).strip().lower()
-        if not EMAIL_RE.match(email):
+        email = (request.form.get("email") or "").strip().lower() or None
+        if email and not EMAIL_RE.match(email):
             flash("That email address isn't valid.", "warn")
             return redirect(url_for("admin_participants", event_id=ev["id"]))
         db = get_db()
-        clash = db.execute("SELECT id FROM participants WHERE event_id=? AND email=? AND id<>?",
-                           (ev["id"], email, pid)).fetchone()
-        if clash:
-            flash("Another participant in this session already uses that email.", "warn")
-            return redirect(url_for("admin_participants", event_id=ev["id"]))
-        pdf = render.render_certificate(ev, name, p["cert_code"], tpl_dir,
-                                        verify_url=f"{app.config['BASE_URL']}/v/{p['cert_code']}")
-        (cert_dir / p["pdf_file"]).write_bytes(pdf)
-        db.execute("UPDATE participants SET full_name=?, email=?, email_status='queued', email_attempts=0, "
-                   "next_attempt_at=NULL, email_error=NULL WHERE id=?", (name, email, pid))
+        if email:
+            clash = db.execute("SELECT id FROM participants WHERE event_id=? AND email=? AND id<>?",
+                               (ev["id"], email, pid)).fetchone()
+            if clash:
+                flash("Another participant in this session already uses that email.", "warn")
+                return redirect(url_for("admin_participants", event_id=ev["id"]))
+        pdf_name = p["pdf_file"] or f"{ev['id']}-{p['cert_code']}.pdf"
+        (cert_dir / pdf_name).write_bytes(render.render_certificate(ev, name, tpl_dir))
+        db.execute("UPDATE participants SET full_name=?, email=?, pdf_file=?, email_status=?, email_attempts=0, "
+                   "next_attempt_at=NULL, email_error=NULL WHERE id=?",
+                   (name, email, pdf_name, "queued" if email else "none", pid))
         db.commit()
-        wake_mailer()
-        flash(f"Updated and re-sent the certificate to {email}.", "ok")
+        if email:
+            wake_mailer()
+            flash(f"Updated and re-sent the certificate to {email}.", "ok")
+        else:
+            flash(f"Updated the certificate for {name}.", "ok")
         return redirect(url_for("admin_participants", event_id=ev["id"]))
 
     @app.post("/admin/participants/<int:pid>/delete")
     @admin_required
     def admin_delete_participant(pid):
         p = participant_or_404(pid)
-        (cert_dir / p["pdf_file"]).unlink(missing_ok=True)
+        if p["pdf_file"]:
+            (cert_dir / p["pdf_file"]).unlink(missing_ok=True)
         get_db().execute("DELETE FROM participants WHERE id=?", (pid,))
         get_db().commit()
-        flash(f"Removed {p['full_name']}. Their certificate link and ID no longer work.", "ok")
+        flash(f"Removed {p['full_name']}. Their certificate link no longer works.", "ok")
         return redirect(url_for("admin_participants", event_id=p["event_id"]))
 
     @app.get("/admin/participants/<int:pid>/pdf")
     @admin_required
     def admin_pdf(pid):
         p = participant_or_404(pid)
-        return send_file(cert_dir / p["pdf_file"], mimetype="application/pdf")
+        return send_file(pdf_path(p), mimetype="application/pdf", as_attachment=request.args.get("dl") == "1",
+                         download_name=f"Certificate_{safe_filename(p['full_name'])}.pdf")
+
+    @app.route("/admin/sessions/<int:event_id>/certificates.zip", methods=["GET", "POST"])
+    @admin_required
+    def admin_zip(event_id):
+        """All of a session's certificates in one ZIP, or only the ticked ones (POST ids)."""
+        ev = event_by_id(event_id)
+        db = get_db()
+        if request.method == "POST":
+            ids = [int(i) for i in request.form.getlist("ids") if i.isdigit()]
+            if not ids:
+                flash("Tick at least one participant to download.", "warn")
+                return redirect(url_for("admin_participants", event_id=event_id))
+            rows = db.execute(f"SELECT * FROM participants WHERE event_id=? AND id IN ({','.join('?' * len(ids))}) "
+                              "ORDER BY full_name", [event_id] + ids).fetchall()
+        else:
+            rows = db.execute("SELECT * FROM participants WHERE event_id=? ORDER BY full_name", (event_id,)).fetchall()
+        if not rows:
+            flash("There are no certificates to download yet.", "warn")
+            return redirect(url_for("admin_participants", event_id=event_id))
+        waiting = sum(1 for p in rows if not p["pdf_file"])
+        if waiting and app.extensions.get("mail_worker"):
+            # making hundreds here would outlast the server's request time limit; the worker is on it
+            flash(f"{waiting} of these certificates are still being made. Try again in a minute.", "warn")
+            return redirect(url_for("admin_participants", event_id=event_id))
+        # built on disk, not in memory: a few hundred certificates can be larger than the server's RAM
+        out = tempfile.TemporaryFile()
+        used = set()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as zf:  # PDFs are already compressed
+            for p in rows:
+                base = f"Certificate_{safe_filename(p['full_name'])}"
+                name, n = f"{base}.pdf", 2
+                while name.lower() in used:
+                    name, n = f"{base}_{n}.pdf", n + 1
+                used.add(name.lower())
+                zf.write(pdf_path(p), name)
+        out.seek(0)
+        return send_file(out, mimetype="application/zip", as_attachment=True,
+                         download_name=f"certificates-{ev['slug']}.zip")
+
+    @app.route("/admin/sessions/<int:event_id>/import", methods=["GET", "POST"])
+    @admin_required
+    def admin_import(event_id):
+        """Create certificates for every name in an Excel or CSV file."""
+        ev = event_by_id(event_id)
+        if not ev["template_file"]:
+            flash("Upload a certificate design first.", "warn")
+            return redirect(url_for("admin_edit", event_id=event_id))
+        result = None
+        if request.method == "POST":
+            upload = request.files.get("file")
+            if upload is None or not upload.filename:
+                flash("Choose an Excel or CSV file to upload.", "warn")
+                return redirect(url_for("admin_import", event_id=event_id))
+            try:
+                people, problems = bulk.read_people(upload.read(), upload.filename, EMAIL_RE)
+            except bulk.BulkImportError as exc:
+                flash(str(exc), "warn")
+                return redirect(url_for("admin_import", event_id=event_id))
+            send = bool(request.form.get("send_email"))
+            db = get_db()
+            added = 0
+            for person in people:
+                name = render.format_name(clean_name(person["name"]), ev["name_case"])
+                email = person["email"] or None
+                if len(name) < 2 or not re.search(r"[^\W\d_]", name):
+                    problems.append((person["row"], f"“{person['name'] or '(empty)'}” isn't a name, skipped"))
+                    continue
+                if len(name) > 80:
+                    problems.append((person["row"], f"“{name[:30]}…” is longer than 80 characters, skipped"))
+                    continue
+                # skip people already in this session, so uploading the same file twice adds nobody twice
+                if email:
+                    dup = db.execute("SELECT 1 FROM participants WHERE event_id=? AND email=?",
+                                     (event_id, email)).fetchone()
+                else:
+                    dup = db.execute("SELECT 1 FROM participants WHERE event_id=? AND email IS NULL AND full_name=?",
+                                     (event_id, name)).fetchone()
+                if dup:
+                    problems.append((person["row"], f"{name} is already in this session, skipped"))
+                    continue
+                db.execute("INSERT INTO participants (event_id, full_name, email, cert_code, token, created_at, "
+                           "email_status) VALUES (?,?,?,?,?,?,?)",
+                           (event_id, name, email, new_code(db), secrets.token_urlsafe(18), now_iso(),
+                            "queued" if send and email else "none"))
+                added += 1
+            db.commit()
+            wake_mailer()
+            problems.sort()
+            result = {"added": added, "problems": problems,
+                      "emailing": send and any(p["email"] for p in people)}
+        return render_template("admin/import.html", ev=ev, result=result)
+
+    @app.get("/admin/import-example.csv")
+    @admin_required
+    def admin_import_example():
+        return Response(bulk.example_csv(), mimetype="text/csv",
+                        headers={"Content-Disposition": 'attachment; filename="names-example.csv"'})
+
+    @app.get("/admin/sessions/<int:event_id>/done-preview")
+    @admin_required
+    def admin_done_preview(event_id):
+        """The thank-you page as a participant sees it, with a sample name."""
+        ev = event_by_id(event_id)
+        p = {"full_name": "Nur Aisyah binti Rahman", "email": "aisyah@example.com", "email_status": "sent",
+             "cert_code": "", "token": ""}
+        return render_template("public/done.html", ev=ev, p=p, texts=done_texts(ev, p["full_name"]), preview=True)
 
     # ================================================================ admin: email
 

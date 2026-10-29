@@ -35,9 +35,32 @@
 
   <div class="card pad" style="margin-top:18px">
     <h2 style="margin-bottom:4px">Certificate email</h2>
-    <p class="muted small" style="margin-bottom:16px">Placeholders: <code>{name}</code> <code>{session}</code> <code>{date}</code> <code>{download_link}</code> <code>{cert_id}</code>. The PDF is attached automatically.</p>
+    <p class="muted small" style="margin-bottom:16px">Placeholders: <code>{name}</code> <code>{session}</code> <code>{date}</code> <code>{download_link}</code>. The PDF is attached automatically.</p>
     <div class="field"><label class="lbl" for="subj">Subject</label><input id="subj" type="text" name="email_subject" value="{{ form.email_subject or '' }}"></div>
     <div class="field" style="margin-bottom:0"><label class="lbl" for="body">Message</label><textarea id="body" name="email_body" rows="9">{{ form.email_body or '' }}</textarea></div>
+  </div>
+
+  <div class="card pad" style="margin-top:18px">
+    <div class="row" style="margin-bottom:4px"><h2>Thank-you page</h2><div class="spacer"></div>
+      {% if ev %}<a class="btn sm o" href="{{ url_for('admin_done_preview', event_id=ev.id) }}" target="_blank">Preview</a>{% endif %}</div>
+    <p class="muted small" style="margin-bottom:16px">The last page participants see after registering. Leave a box empty to use the default.
+      Placeholders: <code>{name}</code> <code>{first_name}</code> <code>{session}</code> <code>{date}</code>.{% if ev %} Save before previewing.{% endif %}</p>
+    <div class="field"><label class="lbl" for="dh">Heading</label>
+      <input id="dh" type="text" name="done_heading" value="{{ form.done_heading or '' }}" placeholder="You're all set"></div>
+    <div class="field"><label class="lbl" for="dt">Title</label>
+      <input id="dt" type="text" name="done_title" value="{{ form.done_title or '' }}" placeholder="Certificate ready, {first_name}!"></div>
+    <div class="field"><label class="lbl" for="dm">Message <span class="faint">(optional)</span></label>
+      <textarea id="dm" name="done_message" rows="4" placeholder="e.g. Thank you for joining us today. See you at the next session!">{{ form.done_message or '' }}</textarea></div>
+    <div class="field"><label class="lbl">Buttons</label>
+      <label class="check"><input type="checkbox" name="done_show_download" value="1" {{ 'checked' if form.done_show_download }}><span>Download PDF</span></label>
+      <label class="check" style="margin-top:6px"><input type="checkbox" name="done_show_view" value="1" {{ 'checked' if form.done_show_view }}><span>View certificate</span></label></div>
+    <div class="row" style="align-items:flex-start;gap:16px">
+      <div class="field" style="flex:1;min-width:180px;margin-bottom:0"><label class="lbl" for="dbl">Extra button text <span class="faint">(optional)</span></label>
+        <input id="dbl" type="text" name="done_button_label" value="{{ form.done_button_label or '' }}" placeholder="e.g. Give us feedback"></div>
+      <div class="field {{ 'has-err' if errors.done_button_url }}" style="flex:2;min-width:220px;margin-bottom:0"><label class="lbl" for="dbu">Extra button link</label>
+        <input id="dbu" type="url" name="done_button_url" value="{{ form.done_button_url or '' }}" placeholder="https://forms.gle/...">
+        {% if errors.done_button_url %}<div class="err">{{ errors.done_button_url }}</div>{% endif %}</div>
+    </div>
   </div>
   <div class="row" style="margin-top:18px"><button class="btn">{{ 'Save changes' if ev else 'Create session and place the name' }}</button>
     <a class="btn o" href="{{ url_for('admin_participants', event_id=ev.id) if ev else url_for('admin_home') }}">Cancel</a></div>

@@ -4,10 +4,10 @@
 {% include "admin/_tabs.html" %}
 <div class="row" style="margin-bottom:16px">
   <form method="get" class="row" style="flex:1;flex-wrap:nowrap;max-width:560px">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search name, email or certificate ID">
-    <select name="status" style="width:150px" onchange="this.form.submit()">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search name or email" style="flex:1;min-width:180px">
+    <select name="status" style="width:170px" onchange="this.form.submit()">
       <option value="">All ({{ total }})</option>
-      {% for s in ['sent','queued','sending','failed'] %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ s|capitalize }} ({{ counts.get(s, 0) }})</option>{% endfor %}
+      {% for s, label in statuses.items() %}<option value="{{ s }}" {{ 'selected' if status == s }}>{{ label }} ({{ counts.get(s, 0) }})</option>{% endfor %}
     </select>
     <button class="btn o">Search</button>
   </form>
@@ -15,33 +15,48 @@
   {% if counts.get('failed') %}
   <form method="post" action="{{ url_for('admin_resend_failed', event_id=ev.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn o">Retry {{ counts.get('failed') }} failed</button></form>
   {% endif %}
+  <a class="btn o" href="{{ url_for('admin_import', event_id=ev.id) }}">Import names</a>
   <a class="btn o" href="{{ url_for('admin_csv', event_id=ev.id) }}">Export CSV</a>
 </div>
+
+{% if rows %}
+<form method="post" action="{{ url_for('admin_zip', event_id=ev.id) }}" id="zipform" class="row" style="margin-bottom:12px">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <a class="btn" href="{{ url_for('admin_zip', event_id=ev.id) }}">Download all certificates (ZIP)</a>
+  <button class="btn o" id="zipSel" disabled>Download selected (0)</button>
+  {% if making %}<span class="muted small"><span class="spin"></span> Making {{ making }} certificate{{ 's' if making != 1 }}…</span>{% endif %}
+</form>
+{% endif %}
+
 <div class="card tablewrap">
 {% if rows %}
 <table>
-  <thead><tr><th>Name</th><th>Email</th><th>Certificate ID</th><th>Registered</th><th>Email</th><th style="width:1%"></th></tr></thead>
+  <thead><tr><th style="width:1%"><input type="checkbox" id="selAll" aria-label="Select all"></th>
+    <th>Name</th><th>Email</th><th>Added</th><th>Email status</th><th style="width:1%"></th></tr></thead>
   <tbody>
   {% for r in rows %}
   <tr>
+    <td><input type="checkbox" name="ids" value="{{ r.id }}" form="zipform" class="sel" aria-label="Select {{ r.full_name }}"></td>
     <td style="font-weight:500">{{ r.full_name }}</td>
-    <td class="muted">{{ r.email }}</td>
-    <td><a class="mono" href="{{ url_for('verify', code=r.cert_code) }}" target="_blank">{{ r.cert_code }}</a></td>
+    <td class="muted">{{ r.email or '—' }}</td>
     <td class="muted small" title="{{ r.created_at }} UTC">{{ r.created_at|localtime }}</td>
-    <td><span class="pill {{ r.email_status }}" {% if r.email_error %}title="{{ r.email_error }}"{% endif %}>{{ r.email_status|capitalize }}</span>
+    <td><span class="pill {{ r.email_status }}" {% if r.email_error %}title="{{ r.email_error }}"{% endif %}>{{ statuses.get(r.email_status, r.email_status) }}</span>
       {% if r.email_status == 'failed' and r.email_error %}<div class="small" style="color:var(--bad);max-width:220px;margin-top:3px">{{ r.email_error[:90] }}</div>{% endif %}</td>
     <td>
       <div class="row" style="flex-wrap:nowrap;gap:6px">
-        <a class="btn sm o" href="{{ url_for('admin_pdf', pid=r.id) }}" target="_blank">PDF</a>
-        <form method="post" action="{{ url_for('admin_resend', pid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm o">Resend</button></form>
+        {% if r.pdf_file %}
+        <a class="btn sm" href="{{ url_for('admin_pdf', pid=r.id) }}?dl=1">Download</a>
+        <a class="btn sm o" href="{{ url_for('admin_pdf', pid=r.id) }}" target="_blank">View</a>
+        {% else %}<span class="muted small" style="white-space:nowrap"><span class="spin"></span> Making…</span>{% endif %}
+        {% if r.email %}<form method="post" action="{{ url_for('admin_resend', pid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm o">{{ 'Send' if r.email_status == 'none' else 'Resend' }}</button></form>{% endif %}
         <details class="fix"><summary class="btn sm o">Fix</summary>
           <form method="post" action="{{ url_for('admin_fix', pid=r.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="text" name="full_name" value="{{ r.full_name }}" aria-label="Full name">
-            <input type="email" name="email" value="{{ r.email }}" aria-label="Email">
-            <button class="btn sm">Save, regenerate and resend</button>
+            <input type="email" name="email" value="{{ r.email or '' }}" placeholder="Email (optional)" aria-label="Email">
+            <button class="btn sm">Save and regenerate{{ ' and resend' if r.email }}</button>
           </form>
-          <form method="post" action="{{ url_for('admin_delete_participant', pid=r.id) }}" onsubmit="return confirm('Remove {{ r.full_name|e }}? Their certificate link and ID will stop working.')">
+          <form method="post" action="{{ url_for('admin_delete_participant', pid=r.id) }}" onsubmit="return confirm('Remove {{ r.full_name|e }}? Their certificate link will stop working.')">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm danger">Remove participant</button>
           </form>
         </details>
@@ -54,12 +69,31 @@
 {% else %}
 <div class="empty">
   {% if q or status %}<p class="muted">No participants match that search.</p>
-  {% else %}<h2>No registrations yet</h2><p class="muted" style="margin:8px 0 16px">Share the QR code. Registrations appear here as they come in.</p>
-  <a class="btn" href="{{ url_for('admin_qr', event_id=ev.id) }}">Get the QR code</a>{% endif %}
+  {% else %}<h2>No participants yet</h2><p class="muted" style="margin:8px 0 16px">Share the QR code, or import a list of names from Excel.</p>
+  <div class="row" style="justify-content:center"><a class="btn" href="{{ url_for('admin_qr', event_id=ev.id) }}">Get the QR code</a>
+  <a class="btn o" href="{{ url_for('admin_import', event_id=ev.id) }}">Import names</a></div>{% endif %}
 </div>
 {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
-{% if counts.get('queued') or counts.get('sending') %}<script>setTimeout(() => location.reload(), 5000);</script>{% endif %}
+<script>
+(function () {
+  const boxes = [...document.querySelectorAll(".sel")], all = document.getElementById("selAll");
+  const btn = document.getElementById("zipSel");
+  if (!all) return;
+  function update() {
+    const k = boxes.filter(b => b.checked).length;
+    btn.textContent = `Download selected (${k})`; btn.disabled = !k;
+    all.checked = k && k === boxes.length; all.indeterminate = k > 0 && k < boxes.length;
+  }
+  all.addEventListener("change", () => { boxes.forEach(b => b.checked = all.checked); update(); });
+  boxes.forEach(b => b.addEventListener("change", update));
+  update();
+})();
+</script>
+{% if counts.get('queued') or counts.get('sending') or making %}<script>
+// keep refreshing while certificates are being made or sent, unless the admin is ticking boxes
+setTimeout(function again() { document.querySelector(".sel:checked") ? setTimeout(again, 5000) : location.reload(); }, 5000);
+</script>{% endif %}
 {% endblock %}

@@ -168,7 +168,7 @@ def name_lines(text, font, size, max_w):
     return lines, size2 * min(1, max_w / widest)
 
 
-def _draw_text_layer(c, ev, name, cert_code, verify_url):
+def _draw_text_layer(c, ev, name):
     W, H = ev["page_w"], ev["page_h"]
     font = _font(ev["name_font"])
     text = format_name(name, ev["name_case"])
@@ -195,18 +195,8 @@ def _draw_text_layer(c, ev, name, cert_code, verify_url):
         else:
             c.drawCentredString(cx, baseline, line)
 
-    if ev["show_cert_id"] and cert_code:
-        small = _font("poppins-regular")
-        fs = max(5.5, H * 0.011)
-        c.setFont(small, fs)
-        c.setFillColor(HexColor("#6B7194"))
-        label = f"Certificate ID {cert_code}"
-        if verify_url:
-            label += f"  ·  Verify: {verify_url}"
-        c.drawRightString(W - W * 0.035, H * 0.022, label)
 
-
-def render_certificate(ev, name, cert_code, template_dir, verify_url=None):
+def render_certificate(ev, name, template_dir):
     """Return PDF bytes for one participant."""
     if not ev["template_file"]:
         raise TemplateError("This session has no certificate template yet.")
@@ -218,7 +208,7 @@ def render_certificate(ev, name, cert_code, template_dir, verify_url=None):
     c.setAuthor(ev["name"])
     if ev["template_kind"] == "image":
         c.drawImage(ImageReader(str(tpl_path)), 0, 0, width=W, height=H)
-    _draw_text_layer(c, ev, name, cert_code, verify_url)
+    _draw_text_layer(c, ev, name)
     c.showPage()
     c.save()
 

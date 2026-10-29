@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}{% set nav = 'sessions' %}{% set tab = 'people' %}
+{% block title %}Import names{% endblock %}
+{% block main %}
+{% include "admin/_tabs.html" %}
+<div style="max-width:720px" class="stack">
+  {% if result %}
+  <div class="card pad">
+    <h2 style="margin-bottom:6px">{{ result.added }} certificate{{ 's' if result.added != 1 }} being made</h2>
+    <p class="muted">
+      {% if result.added %}They appear in the participant list straight away and are ready to download within a few minutes.
+      {% if result.emailing %}People with an email address get theirs by email once it's made.{% endif %}
+      {% else %}Nobody new was added.{% endif %}
+    </p>
+    {% if result.problems %}
+    <div class="flash warn" style="margin:14px 0 0">
+      <b>{{ result.problems|length }} row{{ 's' if result.problems|length != 1 }} to check:</b>
+      <ul style="margin:6px 0 0 18px">
+        {% for row, msg in result.problems[:50] %}<li>Row {{ row }}: {{ msg }}</li>{% endfor %}
+        {% if result.problems|length > 50 %}<li>…and {{ result.problems|length - 50 }} more</li>{% endif %}
+      </ul>
+    </div>
+    {% endif %}
+    <div class="row" style="margin-top:16px"><a class="btn" href="{{ url_for('admin_participants', event_id=ev.id) }}">See participants</a>
+      <a class="btn o" href="{{ url_for('admin_import', event_id=ev.id) }}">Import another file</a></div>
+  </div>
+  {% else %}
+  <form method="post" enctype="multipart/form-data" class="card pad">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h2 style="margin-bottom:4px">Import names from Excel</h2>
+    <p class="muted small" style="margin-bottom:16px">Creates a certificate for every name in the file, using this session's design.</p>
+    <div class="field"><label class="lbl" for="file">Excel or CSV file</label>
+      <input id="file" type="file" name="file" accept=".xlsx,.xlsm,.csv" required style="height:auto;padding:10px;border:1.5px dashed var(--line2);border-radius:var(--r);width:100%;background:var(--soft)">
+      <div class="hint">Put the names in a column headed <b>Name</b> (or Full name / Nama). An <b>Email</b> column is optional. Only the first sheet is read, up to 2,000 names.
+        <a href="{{ url_for('admin_import_example') }}">Download an example file</a>.</div></div>
+    <div class="field">
+      <label class="check"><input type="checkbox" name="send_email" value="1">
+        <span>Email each certificate to the people who have an email address in the file</span></label>
+      <div class="hint" style="margin-left:25px">Leave this off to only make the certificates. You can send them one by one later from the participant list.</div>
+    </div>
+    <p class="hint" style="margin:0 0 16px">Names already in this session are skipped, so uploading the same file twice is safe. Names are printed in the letter case set under Certificate design.</p>
+    <div class="row"><button class="btn">Import and make certificates</button>
+      <a class="btn o" href="{{ url_for('admin_participants', event_id=ev.id) }}">Cancel</a></div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
