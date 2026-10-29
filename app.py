@@ -245,9 +245,8 @@ def create_app(overrides=None):
 
     @app.get("/")
     def home():
-        return render_template("public/message.html", title=app.config["APP_NAME"],
-                               message="Scan the QR code at your event to get your e-certificate.",
-                               admin_link=True)
+        # participants arrive through their session's QR link, so the bare address is for organisers
+        return redirect(url_for("admin_home"))
 
     @app.route("/r/<slug>", methods=["GET", "POST"])
     def register(slug):

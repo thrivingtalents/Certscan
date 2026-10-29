@@ -48,6 +48,8 @@ def test_full_flow():
 
         # login
         assert admin.get("/admin").status_code == 302
+        # the bare address goes straight to the organiser login
+        assert admin.get("/", follow_redirects=True).request.path == "/admin/login"
         t = csrf(admin, "/admin/login")
         assert admin.post("/admin/login", data={"csrf_token": t, "password": "nope"}).status_code == 200
         r = admin.post("/admin/login", data={"csrf_token": t, "password": "pw"})
