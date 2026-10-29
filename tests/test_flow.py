@@ -187,10 +187,12 @@ def test_full_flow():
         dup_id = int(re.search(r"/sessions/(\d+)/", r.headers["Location"]).group(1))
         assert admin.get(f"/admin/sessions/{dup_id}/template.png").status_code == 200
 
-        # delete session
-        t = csrf(admin, f"/admin/sessions/{dup_id}/edit")
-        admin.post(f"/admin/sessions/{dup_id}/delete", data={"csrf_token": t,
-                                                             "confirm_name": "Digital Skills Workshop 2026 (copy)"})
+        # delete session: only from the sessions page, which asks for confirmation first
+        assert f"/admin/sessions/{dup_id}/delete" not in admin.get(f"/admin/sessions/{dup_id}/edit").get_data(as_text=True)
+        home = admin.get("/admin").get_data(as_text=True)
+        assert f"/admin/sessions/{dup_id}/delete" in home and "This can't be undone" in home
+        t = csrf(admin, "/admin")
+        admin.post(f"/admin/sessions/{dup_id}/delete", data={"csrf_token": t})
         assert admin.get(f"/admin/sessions/{dup_id}/edit").status_code == 404
         print("all checks passed")
 

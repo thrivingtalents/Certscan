@@ -167,3 +167,6 @@ input[type=color]{width:42px;height:42px;border:1.5px solid var(--line2);border-
 }
 .btn:disabled{opacity:.5;cursor:default}
 td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.ev .acts .del{margin-left:auto}
+.btn.icon{width:32px;padding:0}
+.btn.danger-hover:hover{color:var(--bad);border-color:#F3C4C4;background:var(--bad-soft)}

@@ -630,10 +630,7 @@ def create_app(overrides=None):
     @app.post("/admin/sessions/<int:event_id>/delete")
     @admin_required
     def admin_delete(event_id):
-        ev = event_by_id(event_id)
-        if request.form.get("confirm_name", "").strip() != ev["name"]:
-            flash("Type the session name exactly to confirm deleting it.", "warn")
-            return redirect(url_for("admin_edit", event_id=event_id))
+        ev = event_by_id(event_id)  # the sessions page asks the admin to confirm before posting here
         db = get_db()
         for p in db.execute("SELECT pdf_file FROM participants WHERE event_id=?", (event_id,)):
             if p["pdf_file"]:

@@ -66,15 +66,4 @@
     <a class="btn o" href="{{ url_for('admin_participants', event_id=ev.id) if ev else url_for('admin_home') }}">Cancel</a></div>
 </form>
 
-{% if ev %}
-<div class="card pad" style="max-width:720px;margin-top:34px;border-color:#F3C4C4">
-  <h2 style="margin-bottom:6px">Delete session</h2>
-  <p class="muted small" style="margin-bottom:14px">Removes the session, its design, every participant and every certificate link. Download the CSV first if you need a record.</p>
-  <form method="post" action="{{ url_for('admin_delete', event_id=ev.id) }}" class="row">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="text" name="confirm_name" placeholder="Type “{{ ev.name }}” to confirm" style="flex:1;min-width:220px">
-    <button class="btn danger">Delete permanently</button>
-  </form>
-</div>
-{% endif %}
 {% endblock %}
