@@ -166,7 +166,7 @@ def create_app(overrides=None):
     if overrides:
         app.config.update(overrides)
     data = Path(app.config["DATA_DIR"])
-    for sub in ("templates", "certs", "outbox"):
+    for sub in ("templates", "certs", "outbox", "fonts"):
         (data / sub).mkdir(parents=True, exist_ok=True)
     init_db(app)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -193,7 +193,19 @@ def create_app(overrides=None):
     app.jinja_env.globals["csrf_token"] = csrf_token
     app.jinja_env.globals["app_name"] = app.config["APP_NAME"]
     app.jinja_env.globals["base_url"] = app.config["BASE_URL"]
-    app.jinja_env.globals["fonts"] = render.FONTS
+    render.UPLOAD_FONT_DIR = data / "fonts"
+    font_dir = data / "fonts"
+
+    def font_choices():
+        """Fonts for the design editor, grouped: [(group, [(key, label, css family)])]."""
+        groups = {}
+        for key, f in render.FONTS.items():
+            groups.setdefault(f[3], []).append((key, f[0], f[2]))
+        uploaded = [(r["key"], r["name"], f"CQ {r['key']}") for r in
+                    get_db().execute("SELECT key, name FROM fonts ORDER BY name")]
+        if uploaded:
+            groups["Uploaded"] = uploaded
+        return list(groups.items())
     try:
         tz = ZoneInfo(app.config["DISPLAY_TZ"])
     except Exception:  # noqa: BLE001
@@ -310,34 +322,19 @@ def create_app(overrides=None):
         if not limiter.allow(("confirm", client_ip()), app.config["REGISTER_LIMIT_PER_MIN"]):
             abort(429)
         db = get_db()
-        existing = db.execute("SELECT * FROM participants WHERE event_id=? AND email=?",
-                              (ev["id"], p["email"])).fetchone()
         session.pop("pending", None)
-        if existing:
-            # Don't reveal the download link to whoever typed the email; re-send to the inbox instead.
-            if existing["email_status"] in ("sent", "failed"):
-                db.execute("UPDATE participants SET email_status='queued', email_attempts=0, next_attempt_at=NULL "
-                           "WHERE id=?", (existing["id"],))
-                db.commit()
-                wake_mailer()
-            return render_template("public/already.html", ev=ev, email=p["email"])
-
+        # every submission gets its own certificate, even when the email has been used before
         full_name = render.format_name(p["full_name"], ev["name_case"])
         code = new_code(db)
         token = secrets.token_urlsafe(18)
         pdf = render.render_certificate(ev, full_name, tpl_dir)
         pdf_name = f"{ev['id']}-{code}.pdf"
         (cert_dir / pdf_name).write_bytes(pdf)
-        try:
-            db.execute(
-                "INSERT INTO participants (event_id, full_name, email, cert_code, token, pdf_file, ip, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (ev["id"], full_name, p["email"], code, token, pdf_name, client_ip(), now_iso()))
-            db.commit()
-        except Exception:  # race: same email submitted twice at once
-            db.rollback()
-            (cert_dir / pdf_name).unlink(missing_ok=True)
-            return render_template("public/already.html", ev=ev, email=p["email"])
+        db.execute(
+            "INSERT INTO participants (event_id, full_name, email, cert_code, token, pdf_file, ip, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (ev["id"], full_name, p["email"], code, token, pdf_name, client_ip(), now_iso()))
+        db.commit()
         wake_mailer()
         return redirect(url_for("done", slug=slug, code=code, token=token))
 
@@ -362,9 +359,9 @@ def create_app(overrides=None):
         p = db.execute("SELECT * FROM participants WHERE cert_code=?", (code,)).fetchone()
         if p is None or not hmac.compare_digest(p["token"], token):
             abort(404)
-        if not limiter.allow(("resend", code), 2, window=600):
-            flash("We've already re-sent it. Please check your spam folder.", "warn")
-        elif p["email_status"] in ("sent", "failed"):
+        if p["email_status"] in ("queued", "sending"):
+            flash("It's on its way. Give it a minute, and check your spam folder.", "ok")
+        else:
             db.execute("UPDATE participants SET email_status='queued', email_attempts=0, next_attempt_at=NULL "
                        "WHERE id=?", (p["id"],))
             db.commit()
@@ -532,7 +529,7 @@ def create_app(overrides=None):
             return redirect(url_for("admin_edit", event_id=event_id))
         if request.method == "POST":
             f = request.form
-            font = f.get("name_font") if f.get("name_font") in render.FONTS else render.DEFAULT_FONT
+            font = f.get("name_font") if render.font_path(f.get("name_font")) else render.DEFAULT_FONT
             color = f.get("name_color") if HEX_RE.match(f.get("name_color", "")) else "#1E2A4A"
             align = f.get("name_align") if f.get("name_align") in ("left", "center", "right") else "center"
             case = f.get("name_case") if f.get("name_case") in ("as_typed", "upper", "title") else "as_typed"
@@ -546,7 +543,7 @@ def create_app(overrides=None):
             if f.get("then") == "qr":
                 return redirect(url_for("admin_qr", event_id=event_id))
             return redirect(url_for("admin_design", event_id=event_id))
-        return render_template("admin/design.html", ev=ev)
+        return render_template("admin/design.html", ev=ev, font_choices=font_choices())
 
     @app.get("/admin/sessions/<int:event_id>/template.png")
     @admin_required
@@ -565,7 +562,7 @@ def create_app(overrides=None):
             ev.update(name_x=fnum(a.get("name_x"), ev["name_x"], 0, 1), name_y=fnum(a.get("name_y"), ev["name_y"], 0, 1),
                       name_w=fnum(a.get("name_w"), ev["name_w"], .05, 1),
                       name_size=fnum(a.get("name_size"), ev["name_size"], .01, .3),
-                      name_font=a.get("name_font") if a.get("name_font") in render.FONTS else ev["name_font"],
+                      name_font=a.get("name_font") if render.font_path(a.get("name_font")) else ev["name_font"],
                       name_color=a.get("name_color") if HEX_RE.match(a.get("name_color", "")) else ev["name_color"],
                       name_align=a.get("name_align", ev["name_align"]), name_case=a.get("name_case", ev["name_case"]))
         name = clean_name(a.get("sample")) or "Nur Aisyah binti Rahman"
@@ -729,12 +726,6 @@ def create_app(overrides=None):
             flash("That email address isn't valid.", "warn")
             return redirect(url_for("admin_participants", event_id=ev["id"]))
         db = get_db()
-        if email:
-            clash = db.execute("SELECT id FROM participants WHERE event_id=? AND email=? AND id<>?",
-                               (ev["id"], email, pid)).fetchone()
-            if clash:
-                flash("Another participant in this session already uses that email.", "warn")
-                return redirect(url_for("admin_participants", event_id=ev["id"]))
         pdf_name = p["pdf_file"] or f"{ev['id']}-{p['cert_code']}.pdf"
         (cert_dir / pdf_name).write_bytes(render.render_certificate(ev, name, tpl_dir))
         db.execute("UPDATE participants SET full_name=?, email=?, pdf_file=?, email_status=?, email_attempts=0, "
@@ -835,13 +826,10 @@ def create_app(overrides=None):
                 if len(name) > 80:
                     problems.append((person["row"], f"“{name[:30]}…” is longer than 80 characters, skipped"))
                     continue
-                # skip people already in this session, so uploading the same file twice adds nobody twice
-                if email:
-                    dup = db.execute("SELECT 1 FROM participants WHERE event_id=? AND email=?",
-                                     (event_id, email)).fetchone()
-                else:
-                    dup = db.execute("SELECT 1 FROM participants WHERE event_id=? AND email IS NULL AND full_name=?",
-                                     (event_id, name)).fetchone()
+                # skip a name + email pair that's already in this session, so uploading the same file twice adds
+                # nobody twice; one email may still appear with several names
+                dup = db.execute("SELECT 1 FROM participants WHERE event_id=? AND full_name=? AND email IS ?",
+                                 (event_id, name, email)).fetchone()
                 if dup:
                     problems.append((person["row"], f"{name} is already in this session, skipped"))
                     continue
@@ -871,6 +859,62 @@ def create_app(overrides=None):
         p = {"full_name": "Nur Aisyah binti Rahman", "email": "aisyah@example.com", "email_status": "sent",
              "cert_code": "", "token": ""}
         return render_template("public/done.html", ev=ev, p=p, texts=done_texts(ev, p["full_name"]), preview=True)
+
+    # ================================================================ admin: fonts
+
+    @app.route("/admin/fonts", methods=["GET", "POST"])
+    @admin_required
+    def admin_fonts():
+        db = get_db()
+        if request.method == "POST":
+            upload = request.files.get("font")
+            if upload is None or not upload.filename:
+                flash("Choose a font file to upload.", "warn")
+                return redirect(url_for("admin_fonts"))
+            data = upload.read()
+            if len(data) > 10 * 1024 * 1024:
+                flash("That font file is larger than 10 MB.", "warn")
+                return redirect(url_for("admin_fonts"))
+            try:
+                own_name = render.check_font(data)
+            except render.FontError as exc:
+                flash(str(exc), "warn")
+                return redirect(url_for("admin_fonts"))
+            name = (request.form.get("name") or "").strip()[:60] or own_name or Path(upload.filename).stem[:60]
+            key = f"{render.UPLOADED_PREFIX}{secrets.token_hex(6)}"
+            (font_dir / f"{key}.ttf").write_bytes(data)
+            db.execute("INSERT INTO fonts (key, name, created_at) VALUES (?,?,?)", (key, name, now_iso()))
+            db.commit()
+            flash(f"Added the font “{name}”. Pick it under Certificate design → Font.", "ok")
+            return redirect(url_for("admin_fonts"))
+        fonts = db.execute(
+            "SELECT f.*, (SELECT COUNT(*) FROM events e WHERE e.name_font=f.key) AS n_used "
+            "FROM fonts f ORDER BY f.name").fetchall()
+        return render_template("admin/fonts.html", fonts=fonts, builtin=render.FONTS)
+
+    @app.post("/admin/fonts/<key>/delete")
+    @admin_required
+    def admin_font_delete(key):
+        db = get_db()
+        row = db.execute("SELECT * FROM fonts WHERE key=?", (key,)).fetchone()
+        if row is None:
+            abort(404)
+        # sessions using it go back to the default font; certificates already made keep the old look
+        n = db.execute("UPDATE events SET name_font=? WHERE name_font=?", (render.DEFAULT_FONT, key)).rowcount
+        db.execute("DELETE FROM fonts WHERE key=?", (key,))
+        db.commit()
+        (font_dir / f"{key}.ttf").unlink(missing_ok=True)
+        flash(f"Deleted “{row['name']}”." + (f" {n} session(s) now use {render.FONTS[render.DEFAULT_FONT][0]}."
+                                             if n else ""), "ok")
+        return redirect(url_for("admin_fonts"))
+
+    @app.get("/admin/fonts/<key>.ttf")
+    @admin_required
+    def admin_font_file(key):
+        path = render.font_path(key)
+        if path is None or key in render.FONTS:
+            abort(404)
+        return send_file(path, mimetype="font/ttf", max_age=86400)
 
     # ================================================================ admin: email
 

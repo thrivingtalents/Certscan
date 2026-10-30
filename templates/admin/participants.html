@@ -50,6 +50,8 @@
         {% else %}<span class="muted small" style="white-space:nowrap"><span class="spin"></span> Making…</span>{% endif %}
         {% if r.email %}<form method="post" action="{{ url_for('admin_resend', pid=r.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm o">{{ 'Send' if r.email_status == 'none' else 'Resend' }}</button></form>{% endif %}
         <details class="fix"><summary class="btn sm o">Fix</summary>
+          <div class="fixhead"><b>Fix {{ r.full_name }}</b>
+            <button type="button" class="btn sm o close" aria-label="Close without saving">✕ Close</button></div>
           <form method="post" action="{{ url_for('admin_fix', pid=r.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="text" name="full_name" value="{{ r.full_name }}" aria-label="Full name">
@@ -91,9 +93,19 @@
   boxes.forEach(b => b.addEventListener("change", update));
   update();
 })();
+
+// Fix panels: one open at a time, closed by their Close button or the Escape key
+const panels = [...document.querySelectorAll("details.fix")];
+panels.forEach(d => {
+  d.addEventListener("toggle", () => { if (d.open) panels.forEach(o => { if (o !== d) o.open = false; }); });
+  d.querySelector(".close").addEventListener("click", () => { d.open = false; d.querySelector("summary").focus(); });
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") panels.forEach(d => d.open = false); });
 </script>
 {% if counts.get('queued') or counts.get('sending') or making %}<script>
-// keep refreshing while certificates are being made or sent, unless the admin is ticking boxes
-setTimeout(function again() { document.querySelector(".sel:checked") ? setTimeout(again, 5000) : location.reload(); }, 5000);
+// keep refreshing while certificates are being made or sent, unless the admin is ticking boxes or fixing someone
+setTimeout(function again() {
+  document.querySelector(".sel:checked, details.fix[open]") ? setTimeout(again, 5000) : location.reload();
+}, 5000);
 </script>{% endif %}
 {% endblock %}

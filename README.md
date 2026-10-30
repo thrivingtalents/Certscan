@@ -8,13 +8,14 @@ Participants scan a QR code, type their name and email, check a preview, and get
 - Password login
 - Sessions: create, edit, open/close registration, duplicate (reuse a design), delete
 - Upload a certificate design as PNG, JPG or a one-page PDF
-- Drag-and-drop editor to place the `[FULL NAME]` box, with font, size, colour, alignment and letter case (As typed / Title Case / CAPS). Names too long for one line move onto two lines.
+- Drag-and-drop editor to place the `[FULL NAME]` box, with font (17 built in, including script/curvy fonts, plus any you upload), size, colour, alignment and letter case (As typed / Title Case / CAPS). Names too long for one line move onto two lines.
 - Preview a sample PDF before saving
 - QR code page: printable poster, PNG and SVG downloads, copy link
 - Participants table: search, filter by email status, download or view one certificate, tick several and download them as a ZIP, download all as a ZIP, resend, fix a typo (regenerates the PDF and re-sends it), remove
 - Bulk import: upload an Excel (.xlsx) or CSV file of names (with an optional Email column) and a certificate is made for every name, optionally emailed
 - CSV export (opens correctly in Excel)
 - Email setup page with a "send test email" button
+- Fonts page: upload your own .ttf fonts and preview every font
 - Optional attendance code per session, so a photo of the QR alone isn't enough to register
 - Customisable thank-you page per session: heading, title, message, which buttons show, and an optional extra button (e.g. a feedback form)
 
@@ -26,7 +27,7 @@ Participants scan a QR code, type their name and email, check a preview, and get
 5. The email arrives with the PDF attached and a download link
 
 **Built in**
-- One certificate per email per session. If someone registers again, it is re-sent to that inbox and the download link isn't shown on screen, so typing someone else's email doesn't reveal their certificate.
+- No limit per email: the same email can register as many times as needed (for example a staff member registering colleagues), and every submission gets its own certificate.
 - Emails go through a background queue with automatic retries (4 attempts with back-off). Imported names get their PDFs made by the same background worker, so large lists don't time out. It's safe to run several app processes.
 - CSRF protection on every form, rate limits on registration and login
 - No external services needed to try it: without a mail server configured, emails are saved as `.eml` files in `data/outbox`
@@ -105,7 +106,8 @@ Put Nginx or Caddy in front for HTTPS. Caddy is the simplest: `cert.yourdomain.c
 - Export the certificate **without** the name. Leave the name area empty (a line under it is fine).
 - PNG/JPG: at least 2000 px wide; 3508 × 2480 px is A4 at 300 dpi. PDFs are used as-is (first page only), which keeps vector artwork sharp.
 - Canva: *Share → Download → PDF Standard*, or PNG at the largest size.
-- The bundled fonts are Poppins and DejaVu Serif, which cover Latin, accented and Malay names. For Chinese, Tamil or Arabic names, add a suitable `.ttf` file to `static/fonts/` and an entry to `FONTS` in `render.py`.
+- Built-in fonts: Poppins, Montserrat, Raleway, DejaVu Serif, Playfair Display, Cinzel, Lora, and the script fonts Great Vibes, Pinyon Script, Allura and Dancing Script. They cover Latin, accented and Malay names; licences are in `static/fonts/OFL-LICENSES.txt`.
+- For other styles, or Chinese, Tamil or Arabic names, upload a suitable `.ttf` font under **Fonts** in the admin panel. `.otf` fonts with PostScript outlines and web fonts (`.woff`) can't be embedded in the PDF; use the `.ttf` version.
 
 ## Project layout
 

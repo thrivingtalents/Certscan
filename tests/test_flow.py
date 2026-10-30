@@ -119,15 +119,23 @@ def test_full_flow():
         assert f"https://cert.test/c/{code}/{token}" in body_text and "Certificate ID" not in body_text
         assert user.get(done_url.replace("/done/", "/status/")).get_json()["status"] == "sent"
 
-        # duplicate registration: no link revealed, email re-sent
+        # the same email can register again, any number of times: each gets its own certificate
         other = app.test_client()
-        t = csrf(other, url)
-        other.post(url, data={"csrf_token": t, "full_name": "Someone Else", "email": "aisyah@example.com"})
-        t = csrf(other, url + "/confirm")
-        r = other.post(url + "/confirm", data={"csrf_token": t})
-        body = r.get_data(as_text=True)
-        assert "already have a certificate" in body and token not in body
-        assert drain(app) == 1
+        for who in ("Someone Else", "Third Person"):
+            t = csrf(other, url)
+            other.post(url, data={"csrf_token": t, "full_name": who, "email": "aisyah@example.com"})
+            t = csrf(other, url + "/confirm")
+            r = other.post(url + "/confirm", data={"csrf_token": t})
+            assert r.status_code == 302 and "/done/" in r.headers["Location"] and token not in r.headers["Location"]
+            page = other.get(r.headers["Location"]).get_data(as_text=True)
+            assert f"Certificate ready, {who.split()[0]}!" in page
+        assert drain(app) == 2
+        # "send it again" has no limit
+        t = csrf(user, done_url)
+        for _ in range(4):
+            assert "Sending it again" in user.post(done_url.replace("/done/", "/resend/"), data={"csrf_token": t},
+                                                 follow_redirects=True).get_data(as_text=True)
+            drain(app)
 
         # the certificate ID verify page is gone
         assert user.get(f"/v/{code}").status_code == 404 and user.get("/v").status_code == 404
@@ -137,7 +145,9 @@ def test_full_flow():
         assert "Nur Aisyah" in people and code not in people and "Certificate ID" not in people
         csv_txt = admin.get(f"/admin/sessions/{ev_id}/participants.csv").get_data(as_text=True)
         assert "aisyah@example.com" in csv_txt and "Certificate ID" not in csv_txt and "Verify" not in csv_txt
-        pid = int(re.search(r"/admin/participants/(\d+)/fix", people).group(1))
+        conn = connect(Path(tmp) / "certqr.db")
+        pid = conn.execute("SELECT id FROM participants WHERE cert_code=?", (code,)).fetchone()["id"]
+        conn.close()
         t = csrf(admin, f"/admin/sessions/{ev_id}/participants")
         admin.post(f"/admin/participants/{pid}/fix", data={"csrf_token": t, "full_name": "Nur Aishah binti Rahman",
                                                            "email": "aisyah@example.com"})
@@ -444,10 +454,76 @@ def test_upgrade_old_database():
         assert {"idx_participants_event", "idx_participants_mail"} <= indexes
         conn.execute("INSERT INTO participants (event_id, full_name, cert_code, token, created_at) "
                      "VALUES (1, 'No Email', 'XYZ', 't', '2026-01-02')")
+        conn.execute("INSERT INTO participants (event_id, full_name, email, cert_code, token, created_at) "
+                     "VALUES (1, 'Same Email', 'old@example.com', 'XYZ2', 't', '2026-01-02')")  # no longer unique
         conn.commit()
         conn.close()
         make_app(tmp)  # starting again changes nothing
         print("upgrade checks passed")
+
+
+def pdf_fonts(data):
+    """Names of the fonts embedded in a PDF's first page."""
+    page = PdfReader(io.BytesIO(data)).pages[0]
+    return {str(f.get_object()["/BaseFont"]) for f in page["/Resources"]["/Font"].values()}
+
+
+def test_fonts():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        app = make_app(tmp)
+        admin, ev_id = logged_in_with_session(app, "Font Session")
+        design = f"/admin/sessions/{ev_id}/design"
+        page = admin.get(design).get_data(as_text=True)
+        assert '<optgroup label="Script / curvy">' in page and "Great Vibes" in page
+
+        def place(font):
+            t = csrf(admin, design)
+            return admin.post(design, data={"csrf_token": t, "name_x": "0.5", "name_y": "0.5", "name_w": "0.6",
+                                             "name_size": "0.07", "name_font": font, "name_color": "#000000",
+                                             "name_align": "center", "name_case": "as_typed"})
+
+        # a built-in script font ends up in the certificate
+        place("great-vibes")
+        assert any("GreatVibes" in f for f in pdf_fonts(admin.get(f"/admin/sessions/{ev_id}/sample.pdf").data))
+
+        # upload a font, use it, then delete it
+        t = csrf(admin, "/admin/fonts")
+        ttf = (ROOT / "static" / "fonts" / "Allura-Regular.ttf").read_bytes()
+        r = admin.post("/admin/fonts", data={"csrf_token": t, "name": "My Brand Script",
+                                             "font": (io.BytesIO(ttf), "brand.ttf")},
+                       content_type="multipart/form-data", follow_redirects=True)
+        assert "Added the font" in r.get_data(as_text=True)
+        conn = connect(Path(tmp) / "certqr.db")
+        key = conn.execute("SELECT key FROM fonts WHERE name='My Brand Script'").fetchone()["key"]
+        conn.close()
+        assert admin.get(f"/admin/fonts/{key}.ttf").data == ttf
+        assert app.test_client().get(f"/admin/fonts/{key}.ttf").status_code == 302  # admins only
+        page = admin.get(design).get_data(as_text=True)
+        assert '<optgroup label="Uploaded">' in page and "My Brand Script" in page
+        place(key)
+        conn = connect(Path(tmp) / "certqr.db")
+        assert conn.execute("SELECT name_font FROM events WHERE id=?", (ev_id,)).fetchone()[0] == key
+        conn.close()
+        assert any("Allura" in f for f in pdf_fonts(admin.get(f"/admin/sessions/{ev_id}/sample.pdf").data))
+
+        # files that aren't usable fonts are refused with a clear message
+        for data, name, msg in ((b"OTTO" + b"\0" * 64, "x.otf", "PostScript outlines"),
+                                (b"wOF2" + b"\0" * 64, "x.woff2", "web font"),
+                                (b"not a font", "x.ttf", "look like a font file")):
+            t = csrf(admin, "/admin/fonts")
+            r = admin.post("/admin/fonts", data={"csrf_token": t, "font": (io.BytesIO(data), name)},
+                           content_type="multipart/form-data", follow_redirects=True)
+            assert msg in r.get_data(as_text=True), name
+
+        # deleting it moves the session back to the default font
+        t = csrf(admin, "/admin/fonts")
+        r = admin.post(f"/admin/fonts/{key}/delete", data={"csrf_token": t}, follow_redirects=True)
+        assert "1 session(s) now use Poppins Bold" in r.get_data(as_text=True)
+        conn = connect(Path(tmp) / "certqr.db")
+        assert conn.execute("SELECT name_font FROM events WHERE id=?", (ev_id,)).fetchone()[0] == "poppins-bold"
+        conn.close()
+        assert not (Path(tmp) / "fonts" / f"{key}.ttf").exists()
+        print("font checks passed")
 
 
 if __name__ == "__main__":
@@ -457,3 +533,4 @@ if __name__ == "__main__":
     test_bulk_import_and_downloads()
     test_thank_you_page()
     test_upgrade_old_database()
+    test_fonts()

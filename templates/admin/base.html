@@ -9,6 +9,7 @@
     <nav class="nav">
       <a href="{{ url_for('admin_home') }}" class="{{ 'on' if nav == 'sessions' }}">Sessions</a>
       <a href="{{ url_for('admin_email') }}" class="{{ 'on' if nav == 'email' }}">Email setup</a>
+      <a href="{{ url_for('admin_fonts') }}" class="{{ 'on' if nav == 'fonts' }}">Fonts</a>
     </nav>
     <form method="post" action="{{ url_for('admin_logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm">Log out</button></form>
   </aside>

@@ -37,7 +37,7 @@
         <span>Email each certificate to the people who have an email address in the file</span></label>
       <div class="hint" style="margin-left:25px">Leave this off to only make the certificates. You can send them one by one later from the participant list.</div>
     </div>
-    <p class="hint" style="margin:0 0 16px">Names already in this session are skipped, so uploading the same file twice is safe. Names are printed in the letter case set under Certificate design.</p>
+    <p class="hint" style="margin:0 0 16px">A row whose name and email are both already in this session is skipped, so uploading the same file twice is safe. Names are printed in the letter case set under Certificate design.</p>
     <div class="row"><button class="btn">Import and make certificates</button>
       <a class="btn o" href="{{ url_for('admin_participants', event_id=ev.id) }}">Cancel</a></div>
   </form>

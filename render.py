@@ -15,16 +15,30 @@ from reportlab.pdfgen import canvas
 
 FONT_DIR = Path(__file__).resolve().parent / "static" / "fonts"
 
-# key -> (label shown in admin, ttf file, css font-family used in the editor preview)
+# key -> (label shown in admin, ttf file, css font-family used in the editor preview, group)
 FONTS = {
-    "poppins-bold":    ("Poppins Bold", "Poppins-Bold.ttf", "CQ Poppins Bold"),
-    "poppins-medium":  ("Poppins Medium", "Poppins-Medium.ttf", "CQ Poppins Medium"),
-    "poppins-regular": ("Poppins Regular", "Poppins-Regular.ttf", "CQ Poppins Regular"),
-    "serif-bold":      ("Serif Bold", "DejaVuSerif-Bold.ttf", "CQ Serif Bold"),
-    "serif-regular":   ("Serif Regular", "DejaVuSerif.ttf", "CQ Serif Regular"),
-    "serif-italic":    ("Serif Italic", "DejaVuSerif-Italic.ttf", "CQ Serif Italic"),
+    "poppins-bold":       ("Poppins Bold", "Poppins-Bold.ttf", "CQ Poppins Bold", "Modern"),
+    "poppins-medium":     ("Poppins Medium", "Poppins-Medium.ttf", "CQ Poppins Medium", "Modern"),
+    "poppins-regular":    ("Poppins Regular", "Poppins-Regular.ttf", "CQ Poppins Regular", "Modern"),
+    "montserrat-bold":    ("Montserrat Bold", "Montserrat-Bold.ttf", "CQ Montserrat Bold", "Modern"),
+    "montserrat-medium":  ("Montserrat Medium", "Montserrat-Medium.ttf", "CQ Montserrat Medium", "Modern"),
+    "raleway-semibold":   ("Raleway SemiBold", "Raleway-SemiBold.ttf", "CQ Raleway SemiBold", "Modern"),
+    "serif-bold":         ("Serif Bold", "DejaVuSerif-Bold.ttf", "CQ Serif Bold", "Elegant serif"),
+    "serif-regular":      ("Serif Regular", "DejaVuSerif.ttf", "CQ Serif Regular", "Elegant serif"),
+    "serif-italic":       ("Serif Italic", "DejaVuSerif-Italic.ttf", "CQ Serif Italic", "Elegant serif"),
+    "playfair-bold":      ("Playfair Display Bold", "PlayfairDisplay-Bold.ttf", "CQ Playfair Bold", "Elegant serif"),
+    "playfair-italic":    ("Playfair Display Italic", "PlayfairDisplay-Italic.ttf", "CQ Playfair Italic", "Elegant serif"),
+    "cinzel-bold":        ("Cinzel Bold (capitals)", "Cinzel-Bold.ttf", "CQ Cinzel Bold", "Elegant serif"),
+    "lora-italic":        ("Lora Italic", "Lora-Italic.ttf", "CQ Lora Italic", "Elegant serif"),
+    "great-vibes":        ("Great Vibes", "GreatVibes-Regular.ttf", "CQ Great Vibes", "Script / curvy"),
+    "pinyon-script":      ("Pinyon Script", "PinyonScript-Regular.ttf", "CQ Pinyon Script", "Script / curvy"),
+    "allura":             ("Allura", "Allura-Regular.ttf", "CQ Allura", "Script / curvy"),
+    "dancing-script":     ("Dancing Script Bold", "DancingScript-Bold.ttf", "CQ Dancing Script", "Script / curvy"),
 }
 DEFAULT_FONT = "poppins-bold"
+UPLOADED_PREFIX = "up-"
+# folder holding uploaded fonts as <key>.ttf; set by the app at start-up
+UPLOAD_FONT_DIR = None
 
 A4_LONG = 841.89  # points
 MAX_IMAGE_EDGE = 3508  # px, A4 at 300 dpi
@@ -32,13 +46,49 @@ MAX_IMAGE_EDGE = 3508  # px, A4 at 300 dpi
 _registered = set()
 
 
+class FontError(ValueError):
+    pass
+
+
+def font_path(key):
+    """The .ttf file for a font key, or None if there's no such font (e.g. an uploaded font was deleted)."""
+    if key in FONTS:
+        return FONT_DIR / FONTS[key][1]
+    if key and key.startswith(UPLOADED_PREFIX) and UPLOAD_FONT_DIR and re.fullmatch(r"up-[0-9a-f]{12}", key):
+        path = Path(UPLOAD_FONT_DIR) / f"{key}.ttf"
+        if path.exists():
+            return path
+    return None
+
+
 def _font(key):
-    key = key if key in FONTS else DEFAULT_FONT
+    path = font_path(key)
+    if path is None:
+        key, path = DEFAULT_FONT, font_path(DEFAULT_FONT)
     name = "CQ-" + key
     if name not in _registered:
-        pdfmetrics.registerFont(TTFont(name, str(FONT_DIR / FONTS[key][1])))
+        pdfmetrics.registerFont(TTFont(name, str(path)))
         _registered.add(name)
     return name
+
+
+def check_font(data):
+    """Make sure an uploaded file is a font the PDF maker can use. Returns the font's own name."""
+    if data[:4] == b"OTTO":
+        raise FontError("This .otf font uses PostScript outlines, which can't be embedded in the PDF. "
+                        "Use the .ttf version of the font instead.")
+    if data[:4] in (b"wOFF", b"wOF2"):
+        raise FontError("That's a web font (.woff). Upload the .ttf version instead.")
+    if data[:4] not in (b"\x00\x01\x00\x00", b"true"):
+        raise FontError("That doesn't look like a font file. Upload a .ttf file.")
+    try:
+        face = TTFont("check", io.BytesIO(data)).face
+    except Exception as exc:  # noqa: BLE001
+        raise FontError("This font can't be used in the PDF. Try another copy of it, as a .ttf file.") from exc
+    missing = [c for c in "ABCabc" if ord(c) not in face.charToGlyph]
+    if missing:
+        raise FontError("This font has no ordinary letters (A–Z), so it can't print names.")
+    return (face.name or b"").decode("latin-1", "ignore") if isinstance(face.name, bytes) else str(face.name or "")
 
 
 class TemplateError(ValueError):

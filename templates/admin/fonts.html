@@ -1,0 +1,67 @@
+{% extends "admin/base.html" %}{% set nav = 'fonts' %}
+{% block title %}Fonts{% endblock %}
+{% block main %}
+<div class="head"><div><h1>Fonts</h1><div class="sub">Fonts for the name on certificates. Choose one per session under Certificate design → Font.</div></div></div>
+<div style="max-width:820px" class="stack">
+  <form method="post" enctype="multipart/form-data" class="card pad">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h2 style="margin-bottom:4px">Upload a font</h2>
+    <p class="muted small" style="margin-bottom:16px">Use a <b>.ttf</b> file, e.g. downloaded from fonts.google.com. Make sure its licence allows embedding in PDFs.</p>
+    <div class="row" style="align-items:flex-end;gap:12px">
+      <div class="field" style="flex:2;min-width:220px;margin-bottom:0"><label class="lbl" for="font">Font file</label>
+        <input id="font" type="file" name="font" accept=".ttf,.otf" required style="height:auto;padding:9px;border:1.5px dashed var(--line2);border-radius:var(--r);width:100%;background:var(--soft)"></div>
+      <div class="field" style="flex:1;min-width:180px;margin-bottom:0"><label class="lbl" for="fname">Name in the list <span class="faint">(optional)</span></label>
+        <input id="fname" type="text" name="name" maxlength="60" placeholder="Taken from the font"></div>
+      <button class="btn">Upload</button>
+    </div>
+  </form>
+
+  {% if fonts %}
+  <div class="card">
+    <div style="padding:18px 22px 6px"><h2>Your fonts</h2></div>
+    <table>
+      <tbody>
+      {% for f in fonts %}
+      <tr>
+        <td style="width:34%"><b>{{ f.name }}</b><div class="muted small">{{ 'Used by ' ~ f.n_used ~ ' session' ~ ('s' if f.n_used != 1 else '') if f.n_used else 'Not used yet' }}</div></td>
+        <td><span class="fontsample" style="font-family:'CQ {{ f.key }}'">Nur Aisyah binti Rahman</span></td>
+        <td style="width:1%">
+          <form method="post" action="{{ url_for('admin_font_delete', key=f.key) }}" class="del"
+                data-confirm="Delete the font “{{ f.name }}”?{% if f.n_used %} {{ f.n_used }} session{{ 's' if f.n_used != 1 }} will switch to Poppins Bold for new certificates.{% endif %}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn sm o icon danger-hover" title="Delete font" aria-label="Delete {{ f.name }}">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div style="padding:18px 22px 6px"><h2>Built-in fonts</h2></div>
+    <table>
+      <tbody>
+      {% for key, f in builtin.items() %}
+      <tr>
+        <td style="width:34%"><b>{{ f[0] }}</b><div class="muted small">{{ f[3] }}</div></td>
+        <td><span class="fontsample" style="font-family:'{{ f[2] }}'">Nur Aisyah binti Rahman</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<style>{% for f in fonts %}
+@font-face{font-family:"CQ {{ f.key }}";src:url({{ url_for('admin_font_file', key=f.key) }})}{% endfor %}</style>
+<script>
+document.querySelectorAll("form.del").forEach(f => f.addEventListener("submit", e => {
+  if (!confirm(f.dataset.confirm)) e.preventDefault();
+}));
+</script>
+{% endblock %}

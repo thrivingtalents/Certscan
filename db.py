@@ -55,8 +55,15 @@ CREATE TABLE IF NOT EXISTS participants (
     email_attempts  INTEGER NOT NULL DEFAULT 0,
     email_error     TEXT,
     email_sent_at   TEXT,
-    next_attempt_at TEXT,
-    UNIQUE (event_id, email)
+    next_attempt_at TEXT                               -- one email may register any number of times
+);
+
+-- fonts uploaded in the admin panel; the file is <key>.ttf in DATA_DIR/fonts
+CREATE TABLE IF NOT EXISTS fonts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    key             TEXT NOT NULL UNIQUE,
+    name            TEXT NOT NULL,
+    created_at      TEXT NOT NULL
 );
 
 -- app-wide settings changed in the admin panel (email sender, mail server); override .env
@@ -115,8 +122,9 @@ def migrate(conn):
         if name not in have:
             conn.execute(f"ALTER TABLE events ADD COLUMN {name} {kind}")
     cols = {r["name"]: r for r in conn.execute("PRAGMA table_info(participants)")}
-    if cols["email"]["notnull"]:
-        # email used to be required; SQLite can only drop NOT NULL by rebuilding the table
+    table_sql = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='participants'").fetchone()[0]
+    if cols["email"]["notnull"] or "UNIQUE (event_id, email)" in table_sql:
+        # email used to be required and once per session; SQLite can only drop those by rebuilding the table
         create = SCHEMA[SCHEMA.index("CREATE TABLE IF NOT EXISTS participants"):]
         create = create[:create.index(");") + 2]
         conn.executescript(
