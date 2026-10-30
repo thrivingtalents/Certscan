@@ -11,6 +11,7 @@
       {% if result.emailing %}People with an email address get theirs by email once it's made.{% endif %}
       {% else %}Nobody new was added.{% endif %}
     </p>
+    {% if result.resent %}<p style="margin-top:8px"><b>{{ result.resent }}</b> {{ 'person was' if result.resent == 1 else 'people were' }} already in this session, so their existing certificate{{ 's are' if result.resent != 1 else ' is' }} being emailed again.</p>{% endif %}
     {% if result.problems %}
     <div class="flash warn" style="margin:14px 0 0">
       <b>{{ result.problems|length }} row{{ 's' if result.problems|length != 1 }} to check:</b>
@@ -33,11 +34,11 @@
       <div class="hint">Put the names in a column headed <b>Name</b> (or Full name / Nama). An <b>Email</b> column is optional. Only the first sheet is read, up to 2,000 names.
         <a href="{{ url_for('admin_import_example') }}">Download an example file</a>.</div></div>
     <div class="field">
-      <label class="check"><input type="checkbox" name="send_email" value="1">
+      <label class="check"><input type="checkbox" name="send_email" value="1" checked>
         <span>Email each certificate to the people who have an email address in the file</span></label>
-      <div class="hint" style="margin-left:25px">Leave this off to only make the certificates. You can send them one by one later from the participant list.</div>
+      <div class="hint" style="margin-left:25px">This includes people already in this session: their certificate is emailed again. Untick to only make the certificates.</div>
     </div>
-    <p class="hint" style="margin:0 0 16px">A row whose name and email are both already in this session is skipped, so uploading the same file twice is safe. Names are printed in the letter case set under Certificate design.</p>
+    <p class="hint" style="margin:0 0 16px">A row whose name and email are both already in this session isn't added a second time. Names are printed in the letter case set under Certificate design.</p>
     <div class="row"><button class="btn">Import and make certificates</button>
       <a class="btn o" href="{{ url_for('admin_participants', event_id=ev.id) }}">Cancel</a></div>
   </form>

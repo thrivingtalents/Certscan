@@ -662,8 +662,10 @@ def create_app(overrides=None):
             "SELECT email_status, COUNT(*) n FROM participants WHERE event_id=? GROUP BY email_status", (event_id,))}
         making = get_db().execute("SELECT COUNT(*) FROM participants WHERE event_id=? AND pdf_file IS NULL",
                                   (event_id,)).fetchone()[0]
+        unsent = get_db().execute("SELECT COUNT(*) FROM participants WHERE event_id=? AND email IS NOT NULL "
+                                  "AND email_status='none'", (event_id,)).fetchone()[0]
         return render_template("admin/participants.html", ev=ev, rows=rows, q=q, status=status, counts=counts,
-                               total=sum(counts.values()), making=making, statuses=EMAIL_STATUSES)
+                               total=sum(counts.values()), making=making, unsent=unsent, statuses=EMAIL_STATUSES)
 
     @app.get("/admin/sessions/<int:event_id>/participants.csv")
     @admin_required
@@ -712,6 +714,19 @@ def create_app(overrides=None):
         get_db().commit()
         wake_mailer()
         flash(f"Re-queued {n} failed email(s).", "ok")
+        return redirect(url_for("admin_participants", event_id=event_id))
+
+    @app.post("/admin/sessions/<int:event_id>/send-unsent")
+    @admin_required
+    def admin_send_unsent(event_id):
+        """Email every participant who has an address but hasn't been emailed (e.g. imported without sending)."""
+        event_by_id(event_id)
+        n = get_db().execute("UPDATE participants SET email_status='queued', email_attempts=0, next_attempt_at=NULL, "
+                             "email_error=NULL WHERE event_id=? AND email IS NOT NULL AND email_status='none'",
+                             (event_id,)).rowcount
+        get_db().commit()
+        wake_mailer()
+        flash(f"Emailing {n} certificate{'s' if n != 1 else ''}.", "ok")
         return redirect(url_for("admin_participants", event_id=event_id))
 
     @app.post("/admin/participants/<int:pid>/fix")
@@ -816,7 +831,7 @@ def create_app(overrides=None):
                 return redirect(url_for("admin_import", event_id=event_id))
             send = bool(request.form.get("send_email"))
             db = get_db()
-            added = 0
+            added = resent = 0
             for person in people:
                 name = render.format_name(clean_name(person["name"]), ev["name_case"])
                 email = person["email"] or None
@@ -826,12 +841,18 @@ def create_app(overrides=None):
                 if len(name) > 80:
                     problems.append((person["row"], f"“{name[:30]}…” is longer than 80 characters, skipped"))
                     continue
-                # skip a name + email pair that's already in this session, so uploading the same file twice adds
-                # nobody twice; one email may still appear with several names
-                dup = db.execute("SELECT 1 FROM participants WHERE event_id=? AND full_name=? AND email IS ?",
-                                 (event_id, name, email)).fetchone()
+                # a name + email pair that's already in this session isn't added twice (so uploading the same file
+                # again is safe), but its existing certificate is emailed again; one email may have several names
+                dup = db.execute("SELECT id, email_status FROM participants WHERE event_id=? AND full_name=? "
+                                 "AND email IS ?", (event_id, name, email)).fetchone()
                 if dup:
-                    problems.append((person["row"], f"{name} is already in this session, skipped"))
+                    if send and email:
+                        if dup["email_status"] not in ("queued", "sending"):
+                            db.execute("UPDATE participants SET email_status='queued', email_attempts=0, "
+                                       "next_attempt_at=NULL, email_error=NULL WHERE id=?", (dup["id"],))
+                        resent += 1
+                    else:
+                        problems.append((person["row"], f"{name} is already in this session, not added again"))
                     continue
                 db.execute("INSERT INTO participants (event_id, full_name, email, cert_code, token, created_at, "
                            "email_status) VALUES (?,?,?,?,?,?,?)",
@@ -841,7 +862,7 @@ def create_app(overrides=None):
             db.commit()
             wake_mailer()
             problems.sort()
-            result = {"added": added, "problems": problems,
+            result = {"added": added, "resent": resent, "problems": problems,
                       "emailing": send and any(p["email"] for p in people)}
         return render_template("admin/import.html", ev=ev, result=result)
 

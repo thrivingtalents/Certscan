@@ -12,6 +12,9 @@
     <button class="btn o">Search</button>
   </form>
   <div class="spacer"></div>
+  {% if unsent %}
+  <form method="post" action="{{ url_for('admin_send_unsent', event_id=ev.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn">Email {{ unsent }} not yet emailed</button></form>
+  {% endif %}
   {% if counts.get('failed') %}
   <form method="post" action="{{ url_for('admin_resend_failed', event_id=ev.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn o">Retry {{ counts.get('failed') }} failed</button></form>
   {% endif %}

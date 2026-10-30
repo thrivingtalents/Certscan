@@ -352,7 +352,23 @@ def test_bulk_import_and_downloads():
                        content_type="multipart/form-data", follow_redirects=True)
         assert ".xlsx" in r.get_data(as_text=True)
 
-        # download all as a ZIP; the 2 CSV names have no PDF yet and are made on the spot
+        # importing people who are already in the session, with emailing on, emails them again
+        t = csrf(admin, url)
+        r = admin.post(url, data={"csrf_token": t, "send_email": "1", "file": (io.BytesIO(xlsx.getvalue()), "names.xlsx")},
+                       content_type="multipart/form-data")
+        page = r.get_data(as_text=True)
+        assert "0 certificates being made" in page and "<b>2</b> people were already in this session" in page
+        assert drain(app) == 2 + 2  # the 2 CSV names' PDFs, then the 2 people with an email
+
+        # one button emails everyone who has an address but hasn't been emailed (Lim Mei Ling from the CSV)
+        people = admin.get(f"/admin/sessions/{ev_id}/participants").get_data(as_text=True)
+        assert "Email 1 not yet emailed" in people
+        t = csrf(admin, f"/admin/sessions/{ev_id}/participants")
+        r = admin.post(f"/admin/sessions/{ev_id}/send-unsent", data={"csrf_token": t}, follow_redirects=True)
+        assert "Emailing 1 certificate." in r.get_data(as_text=True)
+        assert drain(app) == 1
+
+        # download all as a ZIP; every PDF is ready by now
         z = admin.get(f"/admin/sessions/{ev_id}/certificates.zip")
         assert z.status_code == 200 and z.headers["Content-Type"] == "application/zip"
         zf = zipfile.ZipFile(io.BytesIO(z.data))
