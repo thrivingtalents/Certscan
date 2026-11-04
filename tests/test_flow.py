@@ -545,6 +545,48 @@ def test_fonts():
         print("font checks passed")
 
 
+def test_resend_uses_current_design():
+    import time
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        app = make_app(tmp)
+        admin, ev_id = logged_in_with_session(app, "Resend Session")
+        slug = "resend-session"
+        user = app.test_client()
+        t = csrf(user, f"/r/{slug}")
+        user.post(f"/r/{slug}", data={"csrf_token": t, "full_name": "Ali Hassan", "email": "ali@example.com"})
+        t = csrf(user, f"/r/{slug}/confirm")
+        code, token = user.post(f"/r/{slug}/confirm", data={"csrf_token": t}).headers["Location"].rstrip("/").split("/")[-2:]
+        assert drain(app) == 1
+        first = sorted((Path(tmp) / "outbox").glob("*.eml"))[-1]
+        att = BytesParser(policy=policy.default).parsebytes(first.read_bytes())
+        assert any("Poppins" in f for f in pdf_fonts(next(att.iter_attachments()).get_content()))
+
+        # change the font after the certificate was sent, then resend it
+        time.sleep(1.1)  # design changes are recorded to the second
+        t = csrf(admin, f"/admin/sessions/{ev_id}/design")
+        admin.post(f"/admin/sessions/{ev_id}/design", data={
+            "csrf_token": t, "name_x": "0.5", "name_y": "0.5", "name_w": "0.6", "name_size": "0.07",
+            "name_font": "great-vibes", "name_color": "#000000", "name_align": "center", "name_case": "as_typed"})
+        conn = connect(Path(tmp) / "certqr.db")
+        pid = conn.execute("SELECT id FROM participants WHERE cert_code=?", (code,)).fetchone()["id"]
+        conn.close()
+        t = csrf(admin, f"/admin/sessions/{ev_id}/participants")
+        admin.post(f"/admin/participants/{pid}/resend", data={"csrf_token": t})
+        assert drain(app) == 1
+        emls = sorted((Path(tmp) / "outbox").glob("*.eml"), key=lambda f: f.stat().st_mtime)
+        att = BytesParser(policy=policy.default).parsebytes(emls[-1].read_bytes())
+        fonts = pdf_fonts(next(att.iter_attachments()).get_content())
+        assert any("GreatVibes" in f for f in fonts) and not any("Poppins" in f for f in fonts), fonts
+        # the download link now gives the same, updated certificate
+        assert any("GreatVibes" in f for f in pdf_fonts(user.get(f"/c/{code}/{token}").data))
+        # sending again without another design change doesn't re-make it
+        made = (Path(tmp) / "certs").glob(f"*{code}.pdf").__next__().stat().st_mtime
+        admin.post(f"/admin/participants/{pid}/resend", data={"csrf_token": t})
+        assert drain(app) == 1
+        assert (Path(tmp) / "certs").glob(f"*{code}.pdf").__next__().stat().st_mtime == made
+        print("resend design checks passed")
+
+
 if __name__ == "__main__":
     test_full_flow()
     test_email_settings()
@@ -553,3 +595,4 @@ if __name__ == "__main__":
     test_thank_you_page()
     test_upgrade_old_database()
     test_fonts()
+    test_resend_uses_current_design()

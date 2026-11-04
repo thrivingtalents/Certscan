@@ -224,7 +224,11 @@ class MailWorker(threading.Thread):
         # read settings per email so changes in the admin panel apply without a restart
         cfg = {**self.cfg, **mail_settings(conn, self.cfg)}
         try:
-            pdf = (self.data_dir / "certs" / row["pdf_file"]).read_bytes()
+            pdf_name = row["pdf_file"]
+            if is_outdated(self.cert_dir / pdf_name, ev):
+                # the design (font, position, template...) changed since this one was made, e.g. before a resend
+                pdf_name = make_pdf(conn, row["id"], self.tpl_dir, self.cert_dir)
+            pdf = (self.cert_dir / pdf_name).read_bytes()
             msg = build_message(cfg, ev, row, pdf)
             deliver(cfg, msg, self.data_dir / "outbox")
         except Exception as exc:  # noqa: BLE001
@@ -244,6 +248,16 @@ class MailWorker(threading.Thread):
         conn.commit()
         log.info("certificate emailed to %s", row["email"])
         return True
+
+
+def is_outdated(path, ev):
+    """True if a certificate file is missing or older than the last change to its session's design."""
+    if not path.exists():
+        return True
+    if not ev["design_updated_at"]:
+        return False
+    made = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+    return made < datetime.fromisoformat(ev["design_updated_at"])
 
 
 def make_pdf(conn, pid, tpl_dir, cert_dir):

@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS events (
     done_button_url TEXT,
     done_show_download INTEGER NOT NULL DEFAULT 1,
     done_show_view  INTEGER NOT NULL DEFAULT 1,
+    design_updated_at TEXT,                            -- certificates made before this are re-made when re-sent
     created_at      TEXT NOT NULL
 );
 
@@ -111,7 +112,7 @@ def close_db(_exc=None):
 EVENT_COLUMNS = {
     "done_heading": "TEXT", "done_title": "TEXT", "done_message": "TEXT", "done_button_label": "TEXT",
     "done_button_url": "TEXT", "done_show_download": "INTEGER NOT NULL DEFAULT 1",
-    "done_show_view": "INTEGER NOT NULL DEFAULT 1",
+    "done_show_view": "INTEGER NOT NULL DEFAULT 1", "design_updated_at": "TEXT",
 }
 
 

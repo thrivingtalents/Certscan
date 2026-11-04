@@ -496,9 +496,10 @@ def create_app(overrides=None):
                         errors["template"] = str(exc)
                         return render_template("admin/session_form.html", ev=ev, form=form, errors=errors)
                     old = [ev["template_file"], ev["preview_file"]] if ev else []
-                    db.execute("UPDATE events SET template_file=?, template_kind=?, page_w=?, page_h=?, preview_file=? "
-                               "WHERE id=?", (info["template_file"], info["template_kind"], info["page_w"],
-                                              info["page_h"], info["preview_file"], ev_id))
+                    db.execute("UPDATE events SET template_file=?, template_kind=?, page_w=?, page_h=?, preview_file=?, "
+                               "design_updated_at=? WHERE id=?", (info["template_file"], info["template_kind"],
+                                                                  info["page_w"], info["page_h"], info["preview_file"],
+                                                                  now_iso(), ev_id))
                     for f in old:
                         if f:
                             (tpl_dir / f).unlink(missing_ok=True)
@@ -535,9 +536,9 @@ def create_app(overrides=None):
             case = f.get("name_case") if f.get("name_case") in ("as_typed", "upper", "title") else "as_typed"
             get_db().execute(
                 "UPDATE events SET name_x=?, name_y=?, name_w=?, name_size=?, name_font=?, name_color=?, "
-                "name_align=?, name_case=? WHERE id=?",
+                "name_align=?, name_case=?, design_updated_at=? WHERE id=?",
                 (fnum(f.get("name_x"), .5, 0, 1), fnum(f.get("name_y"), .5, 0, 1), fnum(f.get("name_w"), .6, .05, 1),
-                 fnum(f.get("name_size"), .07, .01, .3), font, color, align, case, event_id))
+                 fnum(f.get("name_size"), .07, .01, .3), font, color, align, case, now_iso(), event_id))
             get_db().commit()
             flash("Name position saved.", "ok")
             if f.get("then") == "qr":
@@ -921,7 +922,8 @@ def create_app(overrides=None):
         if row is None:
             abort(404)
         # sessions using it go back to the default font; certificates already made keep the old look
-        n = db.execute("UPDATE events SET name_font=? WHERE name_font=?", (render.DEFAULT_FONT, key)).rowcount
+        n = db.execute("UPDATE events SET name_font=?, design_updated_at=? WHERE name_font=?",
+                       (render.DEFAULT_FONT, now_iso(), key)).rowcount
         db.execute("DELETE FROM fonts WHERE key=?", (key,))
         db.commit()
         (font_dir / f"{key}.ttf").unlink(missing_ok=True)
