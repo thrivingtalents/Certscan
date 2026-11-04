@@ -97,6 +97,35 @@
   });
   window.addEventListener("resize", layout);
   if (img.complete) layout(); else img.addEventListener("load", layout);
+
+  // font picker: each choice shows the sample name in that font, and the chosen one is ticked
+  const picks = [...document.querySelectorAll(".fp-item")], current = $("fpCurrent");
+  function markFont() {
+    picks.forEach(p => p.setAttribute("aria-selected", p.dataset.key === font.value ? "true" : "false"));
+    const on = picks.find(p => p.dataset.key === font.value);
+    current.textContent = on ? on.dataset.label : "";
+    return on;
+  }
+  function showSample() {
+    const words = applyCase(sample.value || "Nur Aisyah binti Rahman", radio("name_case")).split(" ");
+    picks.forEach(p => { p.querySelector(".fp-sample").textContent = words.slice(0, 2).join(" "); });
+  }
+  picks.forEach(p => p.addEventListener("click", () => {
+    font.value = p.dataset.key;
+    font.dispatchEvent(new Event("change"));
+    markFont();
+  }));
+  $("fontpick").addEventListener("keydown", (e) => {  // arrow keys move between fonts
+    const i = picks.indexOf(document.activeElement), d = { ArrowDown: 1, ArrowUp: -1 }[e.key];
+    if (i < 0 || !d) return;
+    e.preventDefault();
+    picks[clamp(i + d, 0, picks.length - 1)].focus();
+  });
+  sample.addEventListener("input", showSample);
+  document.querySelectorAll('input[name="name_case"]').forEach(r => r.addEventListener("change", showSample));
+  showSample();
+  const chosen = markFont();
+  if (chosen) $("fontpick").scrollTop = chosen.offsetTop - 40;  // only the list scrolls, not the page
   if (document.fonts) {
     Promise.all([...font.options].map(o => document.fonts.load(`40px "${o.dataset.css}"`).catch(() => null)))
       .then(layout);

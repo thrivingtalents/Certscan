@@ -26,12 +26,26 @@
       <input type="text" id="sample" value="Nur Aisyah binti Rahman">
     </div>
     <div class="sec">
-      <label class="lbl" for="font">Font</label>
-      <select name="name_font" id="font">
+      <div class="row" style="justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <span class="lbl" style="margin:0">Font</span>
+        <span class="small muted">Selected: <b id="fpCurrent" style="color:var(--accent-ink)"></b></span>
+      </div>
+      {# the list below is what admins click; the select keeps the form value and feeds the live preview #}
+      <select name="name_font" id="font" class="sr-only" tabindex="-1" aria-hidden="true">
         {% for group, items in font_choices %}<optgroup label="{{ group }}">
           {% for key, label, css in items %}<option value="{{ key }}" data-css="{{ css }}" {{ 'selected' if ev.name_font == key }}>{{ label }}</option>{% endfor %}
         </optgroup>{% endfor %}
       </select>
+      <div class="fontpick" id="fontpick" role="listbox" aria-label="Font">
+        {% for group, items in font_choices %}<div class="fp-group">{{ group }}</div>
+          {% for key, label, css in items %}<button type="button" class="fp-item" role="option" data-key="{{ key }}" data-label="{{ label }}"
+              aria-selected="{{ 'true' if ev.name_font == key else 'false' }}">
+            <span class="fp-sample" style="font-family:'{{ css }}', sans-serif">Nur Aisyah</span>
+            <span class="fp-label">{{ label }}</span>
+            <span class="fp-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
+          </button>{% endfor %}
+        {% endfor %}
+      </div>
       <div class="hint"><a href="{{ url_for('admin_fonts') }}">Upload your own font</a></div>
       <div class="row" style="margin-top:14px;flex-wrap:nowrap">
         <div style="flex:1"><label class="lbl" for="size">Size</label><input type="range" name="name_size" id="size" min="0.02" max="0.16" step="0.001" value="{{ ev.name_size }}"></div>

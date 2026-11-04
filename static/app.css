@@ -185,3 +185,16 @@ td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px;accent-co
 .btn.icon{width:32px;padding:0}
 .btn.danger-hover:hover{color:var(--bad);border-color:#F3C4C4;background:var(--bad-soft)}
 .fontsample{font-size:26px;line-height:1.3;color:var(--ink)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.fontpick{position:relative;max-height:300px;overflow-y:auto;border:1.5px solid var(--line2);border-radius:var(--r);padding:6px;background:var(--soft)}
+.fp-group{font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);padding:8px 6px 4px}
+.fp-item{position:relative;display:block;width:100%;text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:8px;padding:7px 34px 6px 10px;margin:0 0 6px;cursor:pointer;color:var(--ink)}
+.fp-item:hover{border-color:var(--accent)}
+.fp-item:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.fp-sample{display:block;font-size:21px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-label{display:block;font:500 11.5px/1.3 Poppins,sans-serif;color:var(--muted)}
+.fp-tick{position:absolute;right:9px;top:50%;margin-top:-11px;width:22px;height:22px;border-radius:50%;display:none;place-items:center;background:var(--accent)}
+.fp-item[aria-selected=true]{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent)}
+.fp-item[aria-selected=true] .fp-label{color:var(--accent-ink);font-weight:600}
+.fp-item[aria-selected=true] .fp-label::after{content:" · Selected"}
+.fp-item[aria-selected=true] .fp-tick{display:grid}

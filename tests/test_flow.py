@@ -500,6 +500,9 @@ def test_fonts():
 
         # a built-in script font ends up in the certificate
         place("great-vibes")
+        page = admin.get(design).get_data(as_text=True)
+        assert re.search(r'data-key="great-vibes" data-label="Great Vibes"\s+aria-selected="true"', page)
+        assert len(re.findall(r'aria-selected="true"', page)) == 1  # only the chosen font is marked
         assert any("GreatVibes" in f for f in pdf_fonts(admin.get(f"/admin/sessions/{ev_id}/sample.pdf").data))
 
         # upload a font, use it, then delete it
