@@ -207,3 +207,10 @@ td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px;accent-co
 .fp-item[aria-selected=true] .fp-tick{display:grid}
 .linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--accent-ink);text-decoration:underline;cursor:pointer}
 .linkbtn:disabled{color:var(--faint);text-decoration:none;cursor:default}
+.pwwrap{position:relative}
+.pwwrap input{padding-right:84px}
+.pwtoggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--muted);font:500 12.5px Poppins,sans-serif;cursor:pointer}
+.pwtoggle:hover{background:var(--soft);color:var(--ink)}
+.pwtoggle:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.pwtoggle .eye-hide,.pwtoggle[aria-pressed=true] .eye-show{display:none}
+.pwtoggle[aria-pressed=true] .eye-hide{display:inline}

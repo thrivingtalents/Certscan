@@ -51,7 +51,9 @@ def test_full_flow():
         # the bare address goes straight to the organiser login
         assert admin.get("/", follow_redirects=True).request.path == "/admin/login"
         # the Thriving Talents logo is on the login page and served
-        assert "brand/logo.png" in admin.get("/admin/login").get_data(as_text=True)
+        login_page = admin.get("/admin/login").get_data(as_text=True)
+        assert "brand/logo.png" in login_page
+        assert 'id="pwToggle"' in login_page and 'aria-label="Show password"' in login_page  # show/hide password button
         assert admin.get("/static/brand/logo.png").data[1:4] == b"PNG"
         t = csrf(admin, "/admin/login")
         assert admin.post("/admin/login", data={"csrf_token": t, "password": "nope"}).status_code == 200
