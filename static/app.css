@@ -198,3 +198,5 @@ td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px;accent-co
 .fp-item[aria-selected=true] .fp-label{color:var(--accent-ink);font-weight:600}
 .fp-item[aria-selected=true] .fp-label::after{content:" · Selected"}
 .fp-item[aria-selected=true] .fp-tick{display:grid}
+.linkbtn{background:none;border:0;padding:0;font:inherit;color:var(--accent-ink);text-decoration:underline;cursor:pointer}
+.linkbtn:disabled{color:var(--faint);text-decoration:none;cursor:default}

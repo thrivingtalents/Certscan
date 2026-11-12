@@ -248,32 +248,49 @@ def _draw_text_layer(c, ev, name):
 
 def render_certificate(ev, name, template_dir):
     """Return PDF bytes for one participant."""
+    out = io.BytesIO()
+    render_many(ev, [name], template_dir, out, title=f"Certificate - {format_name(name, ev['name_case'])}")
+    return out.getvalue()
+
+
+def render_many(ev, names, template_dir, out, title=None):
+    """Write one PDF with a certificate page per name to the file object out.
+
+    The design is stored once and shared by every page, so a few hundred pages stay small.
+    """
     if not ev["template_file"]:
         raise TemplateError("This session has no certificate template yet.")
     W, H = ev["page_w"], ev["page_h"]
     tpl_path = Path(template_dir) / ev["template_file"]
-    buf = io.BytesIO()
+    title = title or f"Certificates - {ev['name']}"
+    buf = io.BytesIO() if ev["template_kind"] == "pdf" else out
     c = canvas.Canvas(buf, pagesize=(W, H))
-    c.setTitle(f"Certificate - {format_name(name, ev['name_case'])}")
+    c.setTitle(title)
     c.setAuthor(ev["name"])
     if ev["template_kind"] == "image":
+        # draw the design once as a reusable form; drawing the image on every page re-hashes it each time
+        c.beginForm("design")
         c.drawImage(ImageReader(str(tpl_path)), 0, 0, width=W, height=H)
-    _draw_text_layer(c, ev, name)
-    c.showPage()
+        c.endForm()
+    for name in names:
+        if ev["template_kind"] == "image":
+            c.doForm("design")
+        _draw_text_layer(c, ev, name)
+        c.showPage()
     c.save()
-
     if ev["template_kind"] != "pdf":
-        return buf.getvalue()
+        return
 
+    # PDF designs: each name goes on its own blank page with the design merged underneath. (Adding the design
+    # page itself for every name makes pypdf share one page object, so every page would show every name.)
     base = PdfReader(str(tpl_path)).pages[0]
-    overlay = PdfReader(io.BytesIO(buf.getvalue())).pages[0]
-    base.merge_page(overlay)
     writer = PdfWriter()
-    writer.add_page(base)
-    writer.add_metadata({"/Title": f"Certificate - {format_name(name, ev['name_case'])}"})
-    out = io.BytesIO()
+    for overlay in PdfReader(io.BytesIO(buf.getvalue())).pages:
+        page = writer.add_blank_page(W, H)
+        page.merge_page(base)
+        page.merge_page(overlay)
+    writer.add_metadata({"/Title": title})
     writer.write(out)
-    return out.getvalue()
 
 
 def pdf_to_png(pdf_bytes, width=1200):

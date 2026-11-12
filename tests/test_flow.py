@@ -382,6 +382,17 @@ def test_bulk_import_and_downloads():
         t = csrf(admin, f"/admin/sessions/{ev_id}/participants")
         z = admin.post(f"/admin/sessions/{ev_id}/certificates.zip", data={"csrf_token": t, "ids": ids[:2]})
         assert len(zipfile.ZipFile(io.BytesIO(z.data)).namelist()) == 2
+        # everyone in one PDF, a page each in name order; or just the ticked ones
+        combined = admin.get(f"/admin/sessions/{ev_id}/certificates.pdf")
+        assert combined.headers["Content-Type"] == "application/pdf" and "attachment" in combined.headers["Content-Disposition"]
+        pages = [" ".join(pg.extract_text().split()) for pg in PdfReader(io.BytesIO(combined.data)).pages]
+        assert len(pages) == 6 and "Ahmad Faiz" in pages[0] and "Tan Wei Ming" in pages[-1]
+        assert all(sum(n in pg for n in ("Ahmad Faiz", "Anand", "Lim Mei Ling", "Nur Aisyah", "Siti", "Tan Wei")) == 1
+                   for pg in pages)  # exactly one name on each page
+        combined = admin.post(f"/admin/sessions/{ev_id}/certificates.pdf", data={"csrf_token": t, "ids": ids[:2]})
+        assert len(PdfReader(io.BytesIO(combined.data)).pages) == 2
+        r = admin.post(f"/admin/sessions/{ev_id}/certificates.pdf", data={"csrf_token": t}, follow_redirects=True)
+        assert "Tick at least one participant" in r.get_data(as_text=True)
         one = admin.get(f"/admin/participants/{ids[0]}/pdf?dl=1")
         assert one.data[:4] == b"%PDF" and "attachment" in one.headers["Content-Disposition"]
 
@@ -587,6 +598,30 @@ def test_resend_uses_current_design():
         print("resend design checks passed")
 
 
+def test_combined_pdf_with_pdf_design():
+    """With a PDF design every page must get its own name (pypdf would otherwise share one page)."""
+    import render
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=(842, 595))
+        c.setFont("Helvetica-Bold", 40)
+        c.drawCentredString(421, 420, "CERTIFICATE OF ATTENDANCE")
+        c.showPage()
+        c.save()
+        (Path(tmp) / "d.pdf").write_bytes(buf.getvalue())
+        ev = {"name": "Talk", "template_file": "d.pdf", "template_kind": "pdf", "page_w": 842, "page_h": 595,
+              "name_x": .5, "name_y": .5, "name_w": .6, "name_size": .07, "name_font": "poppins-bold",
+              "name_color": "#000000", "name_align": "center", "name_case": "as_typed"}
+        out = io.BytesIO()
+        names = ["Alpha One", "Bravo Two", "Charlie Three"]
+        render.render_many(ev, names, tmp, out)
+        pages = [" ".join(p.extract_text().split()) for p in PdfReader(io.BytesIO(out.getvalue())).pages]
+        assert len(pages) == 3
+        for name, page in zip(names, pages):
+            assert "CERTIFICATE OF ATTENDANCE" in page and name in page
+            assert sum(n in page for n in names) == 1, page
+
+
 if __name__ == "__main__":
     test_full_flow()
     test_email_settings()
@@ -596,3 +631,4 @@ if __name__ == "__main__":
     test_upgrade_old_database()
     test_fonts()
     test_resend_uses_current_design()
+    test_combined_pdf_with_pdf_design()

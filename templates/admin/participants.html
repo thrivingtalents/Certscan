@@ -23,10 +23,13 @@
 </div>
 
 {% if rows %}
-<form method="post" action="{{ url_for('admin_zip', event_id=ev.id) }}" id="zipform" class="row" style="margin-bottom:12px">
+<form method="post" action="{{ url_for('admin_combined_pdf', event_id=ev.id) }}" id="zipform" class="row" style="margin-bottom:12px">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <a class="btn" href="{{ url_for('admin_zip', event_id=ev.id) }}">Download all certificates (ZIP)</a>
-  <button class="btn o" id="zipSel" disabled>Download selected (0)</button>
+  <a class="btn" href="{{ url_for('admin_combined_pdf', event_id=ev.id) }}" title="One PDF file with a page for each person">Download all (one PDF)</a>
+  <button class="btn o" id="zipSel" disabled title="One PDF file with a page for each ticked person">Download selected (0)</button>
+  <span class="small muted">Separate files instead:
+    <a href="{{ url_for('admin_zip', event_id=ev.id) }}">all as ZIP</a> ·
+    <button class="linkbtn" id="zipSel2" formaction="{{ url_for('admin_zip', event_id=ev.id) }}" disabled>selected as ZIP</button></span>
   {% if making %}<span class="muted small"><span class="spin"></span> Making {{ making }} certificate{{ 's' if making != 1 }}…</span>{% endif %}
 </form>
 {% endif %}
@@ -85,11 +88,11 @@
 <script>
 (function () {
   const boxes = [...document.querySelectorAll(".sel")], all = document.getElementById("selAll");
-  const btn = document.getElementById("zipSel");
+  const btn = document.getElementById("zipSel"), zipBtn = document.getElementById("zipSel2");
   if (!all) return;
   function update() {
     const k = boxes.filter(b => b.checked).length;
-    btn.textContent = `Download selected (${k})`; btn.disabled = !k;
+    btn.textContent = `Download selected (${k})`; btn.disabled = zipBtn.disabled = !k;
     all.checked = k && k === boxes.length; all.indeterminate = k > 0 && k < boxes.length;
   }
   all.addEventListener("change", () => { boxes.forEach(b => b.checked = all.checked); update(); });

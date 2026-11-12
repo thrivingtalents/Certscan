@@ -773,23 +773,47 @@ def create_app(overrides=None):
         return send_file(pdf_path(p), mimetype="application/pdf", as_attachment=request.args.get("dl") == "1",
                          download_name=f"Certificate_{safe_filename(p['full_name'])}.pdf")
 
-    @app.route("/admin/sessions/<int:event_id>/certificates.zip", methods=["GET", "POST"])
-    @admin_required
-    def admin_zip(event_id):
-        """All of a session's certificates in one ZIP, or only the ticked ones (POST ids)."""
-        ev = event_by_id(event_id)
+    def chosen_participants(event_id):
+        """The session's participants, or only the ticked ones when the form posts ids; by name.
+
+        Returns the rows, or None after flashing why there's nothing to download.
+        """
         db = get_db()
         if request.method == "POST":
             ids = [int(i) for i in request.form.getlist("ids") if i.isdigit()]
             if not ids:
                 flash("Tick at least one participant to download.", "warn")
-                return redirect(url_for("admin_participants", event_id=event_id))
+                return None
             rows = db.execute(f"SELECT * FROM participants WHERE event_id=? AND id IN ({','.join('?' * len(ids))}) "
                               "ORDER BY full_name", [event_id] + ids).fetchall()
         else:
             rows = db.execute("SELECT * FROM participants WHERE event_id=? ORDER BY full_name", (event_id,)).fetchall()
         if not rows:
             flash("There are no certificates to download yet.", "warn")
+            return None
+        return rows
+
+    @app.route("/admin/sessions/<int:event_id>/certificates.pdf", methods=["GET", "POST"])
+    @admin_required
+    def admin_combined_pdf(event_id):
+        """One PDF with a page per participant (all, or the ticked ones), in the session's current design."""
+        ev = event_by_id(event_id)
+        rows = chosen_participants(event_id)
+        if rows is None:
+            return redirect(url_for("admin_participants", event_id=event_id))
+        out = tempfile.TemporaryFile()
+        render.render_many(ev, [p["full_name"] for p in rows], tpl_dir, out, title=f"Certificates - {ev['name']}")
+        out.seek(0)
+        return send_file(out, mimetype="application/pdf", as_attachment=True,
+                         download_name=f"certificates-{ev['slug']}.pdf")
+
+    @app.route("/admin/sessions/<int:event_id>/certificates.zip", methods=["GET", "POST"])
+    @admin_required
+    def admin_zip(event_id):
+        """Each certificate as its own PDF file, all in one ZIP (all, or the ticked ones)."""
+        ev = event_by_id(event_id)
+        rows = chosen_participants(event_id)
+        if rows is None:
             return redirect(url_for("admin_participants", event_id=event_id))
         waiting = sum(1 for p in rows if not p["pdf_file"])
         if waiting and app.extensions.get("mail_worker"):

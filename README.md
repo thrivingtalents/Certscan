@@ -11,7 +11,7 @@ Participants scan a QR code, type their name and email, check a preview, and get
 - Drag-and-drop editor to place the `[FULL NAME]` box, with font (17 built in, including script/curvy fonts, plus any you upload), size, colour, alignment and letter case (As typed / Title Case / CAPS). Names too long for one line move onto two lines.
 - Preview a sample PDF before saving
 - QR code page: printable poster, PNG and SVG downloads, copy link
-- Participants table: search, filter by email status, download or view one certificate, tick several and download them as a ZIP, download all as a ZIP, resend, fix a typo (regenerates the PDF and re-sends it), remove
+- Participants table: search, filter by email status, download or view one certificate, download everyone (or just the ticked ones) as one multi-page PDF, or as separate files in a ZIP, resend, fix a typo (regenerates the PDF and re-sends it), remove
 - Bulk import: upload an Excel (.xlsx) or CSV file of names (with an optional Email column) and a certificate is made for every name, optionally emailed
 - CSV export (opens correctly in Excel)
 - Email setup page with a "send test email" button
