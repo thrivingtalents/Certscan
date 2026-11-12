@@ -50,6 +50,9 @@ def test_full_flow():
         assert admin.get("/admin").status_code == 302
         # the bare address goes straight to the organiser login
         assert admin.get("/", follow_redirects=True).request.path == "/admin/login"
+        # the Thriving Talents logo is on the login page and served
+        assert "brand/logo.png" in admin.get("/admin/login").get_data(as_text=True)
+        assert admin.get("/static/brand/logo.png").data[1:4] == b"PNG"
         t = csrf(admin, "/admin/login")
         assert admin.post("/admin/login", data={"csrf_token": t, "password": "nope"}).status_code == 200
         r = admin.post("/admin/login", data={"csrf_token": t, "password": "pw"})
@@ -431,6 +434,12 @@ def test_thank_you_page():
         done_url = user.post("/r/leadership-talk/confirm", data={"csrf_token": t}).headers["Location"]
         page = user.get(done_url).get_data(as_text=True)
         assert "Terima kasih!" in page and "Well done, Ali" in page and "See you at Leadership Talk." in page
+        # the logo is on the participant pages, the admin pages and the QR poster
+        for pg in (page, user.get("/r/leadership-talk").get_data(as_text=True),
+                   admin.get("/admin").get_data(as_text=True),
+                   admin.get(f"/admin/sessions/{ev_id}/qr").get_data(as_text=True),
+                   user.get("/r/no-such-session").get_data(as_text=True)):
+            assert 'brand/logo.png" alt="Thriving Talents"' in pg
         assert 'href="https://forms.gle/abc"' in page and "Give feedback" in page
         assert "Download PDF" not in page and "View certificate" in page
 

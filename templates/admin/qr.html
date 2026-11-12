@@ -4,6 +4,7 @@
 {% include "admin/_tabs.html" %}
 <div class="qrwrap">
   <div class="poster">
+    <div class="posterlogo"><img src="{{ url_for('static', filename='brand/logo.png') }}" alt="Thriving Talents"></div>
     <div class="ev-name">{{ ev.name }}</div>
     <h2>Scan to get your<br>e-certificate</h2>
     <div class="qr">{{ qr_svg|safe }}</div>

@@ -7,6 +7,7 @@
 <div class="pub">
   {% block page %}
   <header class="top">
+    <div class="toplogo"><img src="{{ url_for('static', filename='brand/logo.png') }}" alt="Thriving Talents"></div>
     <div class="k">{{ ev.name }}</div>
     <h1>{% block heading %}Get your e-certificate{% endblock %}</h1>
     {% if ev.event_date %}<div class="d">{{ ev.event_date }}</div>{% endif %}

@@ -5,7 +5,7 @@
 </head><body>
 <div class="shell">
   <aside class="side">
-    <a class="brand" href="{{ url_for('admin_home') }}"><i>{% include "_logo.html" %}</i>{{ app_name }}</a>
+    <a class="orglogo" href="{{ url_for('admin_home') }}"><img src="{{ url_for('static', filename='brand/logo.png') }}" alt="Thriving Talents"><span>{{ app_name }} · Admin</span></a>
     <nav class="nav">
       <a href="{{ url_for('admin_home') }}" class="{{ 'on' if nav == 'sessions' }}">Sessions</a>
       <a href="{{ url_for('admin_email') }}" class="{{ 'on' if nav == 'email' }}">Email setup</a>

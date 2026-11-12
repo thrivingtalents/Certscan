@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Log in · {{ app_name }}</title><link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}"></head>
 <body><div class="pub"><div class="plain" style="margin-top:14vh">
-  <div class="row" style="justify-content:center;margin-bottom:22px"><span class="brand" style="color:var(--ink);margin:0"><i>{% include "_logo.html" %}</i>{{ app_name }}</span></div>
+  <div class="plainlogo"><img src="{{ url_for('static', filename='brand/logo.png') }}" alt="Thriving Talents"></div>
   <form method="post" class="card pad" style="text-align:left">
     <h2 style="margin-bottom:16px">Admin log in</h2>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
