@@ -9,6 +9,7 @@ import base64
 import hashlib
 import html
 import logging
+import re
 import smtplib
 import ssl
 import threading
@@ -31,12 +32,81 @@ DEFAULT_BODY = (
     "Thank you for joining {session}. Your certificate of participation is attached to this email.\n\n"
     "You can also download it any time here:\n{download_link}\n"
 )
-PLACEHOLDERS = ("{name}", "{session}", "{date}", "{download_link}")
+PLACEHOLDERS = ("{name}", "{session}", "{client}", "{date}", "{download_link}")
+NO_REPLY_NOTE = "This is an automated email. Please don't reply to it."
+
+# in the message an admin writes: [text](https://...) is a link, {picture:<key>} is a picture they uploaded,
+# and any other web address becomes clickable
+LINK_RE = re.compile(r"\[([^\[\]\n]+)\]\((https?://[^\s()<>]+)\)|(https?://[^\s<>\"'\[\]]+)|\{picture:([0-9a-f]{12})\}")
+PICTURE_DIR = "email-pictures"
+PICTURE_TYPES = {"jpg": ("image", "jpeg"), "png": ("image", "png"), "gif": ("image", "gif")}
+
+
+def picture_file(pictures_dir, key):
+    """The stored file for a picture key, or None if it doesn't exist."""
+    if not pictures_dir or not re.fullmatch(r"[0-9a-f]{12}", key or ""):
+        return None
+    for ext in PICTURE_TYPES:
+        path = Path(pictures_dir) / f"{key}.{ext}"
+        if path.exists():
+            return path
+    return None
+
+
+def body_text(body):
+    """The plain-text version of a message: links as "text (address)", pictures left out."""
+    def sub(m):
+        if m.group(1):
+            return f"{m.group(1)} ({m.group(2)})"
+        return m.group(3) or ""
+    text = LINK_RE.sub(sub, body)
+    return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
+
+
+def body_html(body, picture_src):
+    """HTML for a message. picture_src(key) returns the image address, or None to leave it out."""
+    out, pos = [], 0
+    for m in LINK_RE.finditer(body):
+        out.append(html.escape(body[pos:m.start()]))
+        pos = m.end()
+        if m.group(1):
+            out.append(f'<a href="{html.escape(m.group(2))}" style="color:#4B3BE0">{html.escape(m.group(1))}</a>')
+        elif m.group(3):
+            # "see https://x.com." keeps the full stop out of the link
+            url, tail = re.match(r"(.*?)([.,;:!?)]*)$", m.group(3)).groups()
+            out.append(f'<a href="{html.escape(url)}" style="color:#4B3BE0">{html.escape(url)}</a>{html.escape(tail)}')
+        else:
+            src = picture_src(m.group(4))
+            if src:
+                out.append(f'<img src="{html.escape(src)}" alt="" style="display:block;max-width:100%;height:auto;'
+                           f'border:0;margin:6px 0">')
+    out.append(html.escape(body[pos:]))
+    # a picture is a block of its own, so the line break after it isn't needed as well
+    joined = re.sub(r"(<img [^>]+>)\n", r"\1", "".join(out))
+    return joined.replace("\n", "<br>")
+
+
+def wrap_html(inner):
+    return ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1B2140;'
+            'max-width:640px">' + inner +
+            '<p style="margin:28px 0 0;padding-top:12px;border-top:1px solid #E3E6F0;font-size:12px;color:#8A90AE">'
+            + html.escape(NO_REPLY_NOTE) + '</p></div>')
+
+
+def message_values(base_url, ev, p):
+    return {
+        "name": p["full_name"],
+        "session": ev["name"],
+        "client": ev["client_name"] or "",
+        "date": ev["event_date"] or "",
+        "download_link": f"{base_url}/c/{p['cert_code']}/{p['token']}",
+        "cert_id": "",  # certificate IDs were removed; blank it in messages written before that
+    }
 
 
 # Mail settings an admin can change on the Email setup page. Saved values override .env.
 SETTING_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_SSL", "SMTP_STARTTLS",
-                "MAIL_FROM", "MAIL_REPLY_TO")
+                "MAIL_FROM")
 
 
 def _fernet(secret_key):
@@ -91,14 +161,8 @@ def fill(template, values):
     return out
 
 
-def build_message(cfg, ev, p, pdf_bytes):
-    values = {
-        "name": p["full_name"],
-        "session": ev["name"],
-        "date": ev["event_date"] or "",
-        "download_link": f"{cfg['BASE_URL']}/c/{p['cert_code']}/{p['token']}",
-        "cert_id": "",  # certificate IDs were removed; blank it in messages written before that
-    }
+def build_message(cfg, ev, p, pdf_bytes, pictures_dir=None):
+    values = message_values(cfg["BASE_URL"], ev, p)
     subject = fill(ev["email_subject"] or DEFAULT_SUBJECT, values).replace("\n", " ").strip()
     body = fill(ev["email_body"] or DEFAULT_BODY, values)
 
@@ -106,18 +170,30 @@ def build_message(cfg, ev, p, pdf_bytes):
     msg["Subject"] = subject
     msg["From"] = cfg["MAIL_FROM"]
     msg["To"] = p["email"]
-    if cfg.get("MAIL_REPLY_TO"):
-        msg["Reply-To"] = cfg["MAIL_REPLY_TO"]
-    msg["Message-ID"] = make_msgid(domain=parseaddr(cfg["MAIL_FROM"])[1].rpartition("@")[2] or None)
-    msg.set_content(body)
+    # sent from a no-reply address, so there is no Reply-To; this also stops out-of-office auto-replies
+    msg["Auto-Submitted"] = "auto-generated"
+    domain = parseaddr(cfg["MAIL_FROM"])[1].rpartition("@")[2] or None
+    msg["Message-ID"] = make_msgid(domain=domain)
+    msg.set_content(body_text(body) + "\n--\n" + NO_REPLY_NOTE + "\n")
 
-    link = values["download_link"]
-    body_html = html.escape(body).replace(html.escape(link), f'<a href="{html.escape(link)}">{html.escape(link)}</a>')
-    msg.add_alternative(
-        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1B2140">'
-        + body_html.replace("\n", "<br>") + "</div>",
-        subtype="html",
-    )
+    pictures = {}  # key -> (content id, file)
+
+    def picture_src(key):
+        path = picture_file(pictures_dir, key)
+        if path is None:
+            return None
+        if key not in pictures:
+            pictures[key] = (make_msgid(idstring="pic", domain=domain), path)
+        return "cid:" + pictures[key][0][1:-1]
+
+    msg.add_alternative(wrap_html(body_html(body, picture_src)), subtype="html")
+    if pictures:
+        # pictures travel inside the email rather than being linked from the web, so mail apps show them straight away
+        html_part = msg.get_payload()[1]
+        for cid, path in pictures.values():
+            maintype, subtype = PICTURE_TYPES[path.suffix[1:]]
+            html_part.add_related(path.read_bytes(), maintype=maintype, subtype=subtype, cid=cid,
+                                  disposition="inline", filename=path.name)
     safe = "".join(ch if ch.isalnum() else "_" for ch in p["full_name"]).strip("_")[:60] or "Certificate"
     msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=f"Certificate_{safe}.pdf")
     return msg
@@ -229,7 +305,7 @@ class MailWorker(threading.Thread):
                 # the design (font, position, template...) changed since this one was made, e.g. before a resend
                 pdf_name = make_pdf(conn, row["id"], self.tpl_dir, self.cert_dir)
             pdf = (self.cert_dir / pdf_name).read_bytes()
-            msg = build_message(cfg, ev, row, pdf)
+            msg = build_message(cfg, ev, row, pdf, self.data_dir / PICTURE_DIR)
             deliver(cfg, msg, self.data_dir / "outbox")
         except Exception as exc:  # noqa: BLE001
             attempts = row["email_attempts"]

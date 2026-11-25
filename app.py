@@ -22,6 +22,7 @@ from functools import wraps
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
+from PIL import Image
 from flask import (Flask, Response, abort, flash, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
 
@@ -38,6 +39,8 @@ mimetypes.add_type("text/css", ".css")
 CODE_ALPHABET ="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 EMAIL_RE = re.compile(r"^[^@\s<>\"']+@[^@\s<>\"']+\.[A-Za-z]{2,}$")
 SLUG_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,58})[a-z0-9]$")
+SLUG_RULE = "Use 3-60 lowercase letters, numbers and dashes."
+SLUG_TAKEN = "Another session already uses this link."
 HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -120,9 +123,25 @@ def event_by_slug(slug):
 
 DONE_DEFAULTS = {"done_heading": "You're all set", "done_title": "Certificate ready, {first_name}!",
                  "done_message": ""}
-DONE_PLACEHOLDERS = ("{name}", "{first_name}", "{session}", "{date}")
+DONE_PLACEHOLDERS = ("{name}", "{first_name}", "{session}", "{client}", "{date}")
 # email_status values, with the label the admin panel shows
 EMAIL_STATUSES = {"sent": "Sent", "queued": "Queued", "sending": "Sending", "failed": "Failed", "none": "Not emailed"}
+# ready-made thank-you texts the admin can start from
+DONE_SAMPLES = [
+    {"label": "Workshop", "heading": "Thank you for joining us!", "title": "Well done, {first_name}!",
+     "message": "Thank you for taking part in {session}. We hope you enjoyed the workshop and picked up "
+                "something useful to take back to work.\n\nYour certificate is on its way to your inbox. "
+                "We'd love to see you at our next session!"},
+    {"label": "Training programme", "heading": "Congratulations!", "title": "You did it, {first_name}!",
+     "message": "Congratulations on completing {session}. Your certificate of completion is ready below and "
+                "has also been sent to your email.\n\nKeep learning and keep thriving!"},
+    {"label": "Webinar / talk", "heading": "Thanks for attending", "title": "Your certificate is ready, {first_name}",
+     "message": "Thank you for attending {session}. Your e-certificate has been sent to your email, and you "
+                "can download it below at any time."},
+    {"label": "For a client", "heading": "Thank you!", "title": "Certificate ready, {first_name}!",
+     "message": "Thank you for being part of {session}, organised by Thriving Talents for {client}. "
+                "Your certificate has been emailed to you. Have a great day ahead!"},
+]
 DONE_FIELDS = ("done_heading", "done_title", "done_message", "done_button_label", "done_button_url",
                "done_show_download", "done_show_view")
 
@@ -130,7 +149,7 @@ DONE_FIELDS = ("done_heading", "done_title", "done_message", "done_button_label"
 def done_texts(ev, full_name):
     """The thank-you page's heading, title and message for one participant, placeholders filled in."""
     values = {"name": full_name, "first_name": full_name.split(" ")[0], "session": ev["name"],
-              "date": ev["event_date"] or ""}
+              "client": ev["client_name"] or "", "date": ev["event_date"] or ""}
     return {key[5:]: mailer.fill(ev[key] or default, values) for key, default in DONE_DEFAULTS.items()}
 
 
@@ -416,15 +435,31 @@ def create_app(overrides=None):
     @app.get("/admin")
     @admin_required
     def admin_home():
-        rows = get_db().execute(
+        db = get_db()
+        q = (request.args.get("q") or "").strip()[:100]
+        rows = db.execute(
             "SELECT e.*, "
             " (SELECT COUNT(*) FROM participants p WHERE p.event_id=e.id) AS n_total,"
             " (SELECT COUNT(*) FROM participants p WHERE p.event_id=e.id AND p.email_status='sent') AS n_sent,"
             " (SELECT COUNT(*) FROM participants p WHERE p.event_id=e.id AND p.email_status='failed') AS n_failed "
             "FROM events e ORDER BY e.id DESC").fetchall()
         total_sent = sum(r["n_sent"] for r in rows)
-        return render_template("admin/sessions.html", events=rows, total_sent=total_sent,
-                               smtp=bool(mailer.mail_settings(get_db(), app.config)["SMTP_HOST"]))
+        found = None
+        if q:
+            # search certificates by the participant's name or email, and sessions by session or client name
+            like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            found = db.execute(
+                "SELECT p.*, e.name AS session_name, e.client_name FROM participants p JOIN events e ON e.id=p.event_id "
+                "WHERE p.full_name LIKE ? ESCAPE '\\' OR p.email LIKE ? ESCAPE '\\' "
+                "OR e.client_name LIKE ? ESCAPE '\\' OR e.name LIKE ? ESCAPE '\\' "
+                "ORDER BY p.id DESC LIMIT 200", (like,) * 4).fetchall()
+            hit_events = {p["event_id"] for p in found}
+            ql = q.lower()
+            rows = [e for e in rows if ql in e["name"].lower() or ql in (e["client_name"] or "").lower()
+                    or e["id"] in hit_events]
+        return render_template("admin/sessions.html", events=rows, total_sent=total_sent, q=q, found=found,
+                               statuses=EMAIL_STATUSES,
+                               smtp=bool(mailer.mail_settings(db, app.config)["SMTP_HOST"]))
 
     def save_template_upload(ev_id, file):
         data = file.read()
@@ -433,7 +468,8 @@ def create_app(overrides=None):
 
     def session_form(ev=None):
         db = get_db()
-        form = dict(ev) if ev else {"name": "", "event_date": "", "slug": "", "access_code": "", "status": "open",
+        form = dict(ev) if ev else {"name": "", "client_name": "", "event_date": "", "slug": "", "access_code": "",
+                                    "status": "open",
                                     "email_subject": mailer.DEFAULT_SUBJECT, "email_body": mailer.DEFAULT_BODY,
                                     "done_heading": "", "done_title": "", "done_message": "",
                                     "done_button_label": "", "done_button_url": "",
@@ -452,6 +488,7 @@ def create_app(overrides=None):
             if bool(form["done_button_label"]) != bool(form["done_button_url"]):
                 errors["done_button_url"] = "Fill in both the button text and its link, or leave both empty."
             form["name"] = (request.form.get("name") or "").strip()[:120]
+            form["client_name"] = (request.form.get("client_name") or "").strip()[:120]
             form["event_date"] = (request.form.get("event_date") or "").strip()[:40]
             form["slug"] = (request.form.get("slug") or "").strip().lower()
             form["access_code"] = (request.form.get("access_code") or "").strip()[:40]
@@ -463,11 +500,11 @@ def create_app(overrides=None):
             if not form["slug"]:
                 form["slug"] = unique_slug(db, slugify(form["name"]), ev["id"] if ev else None)
             elif not SLUG_RE.match(form["slug"]):
-                errors["slug"] = "Use 3-60 lowercase letters, numbers and dashes."
+                errors["slug"] = SLUG_RULE
             else:
                 taken = db.execute("SELECT id FROM events WHERE slug=?", (form["slug"],)).fetchone()
                 if taken and (not ev or taken["id"] != ev["id"]):
-                    errors["slug"] = "Another session already uses this link."
+                    errors["slug"] = SLUG_TAKEN
             upload = request.files.get("template")
             has_upload = upload is not None and upload.filename
             if not ev and not has_upload:
@@ -475,17 +512,19 @@ def create_app(overrides=None):
             if not errors:
                 if ev is None:
                     cur = db.execute(
-                        "INSERT INTO events (slug, name, event_date, status, access_code, email_subject, email_body, "
-                        "created_at) VALUES (?,?,?,?,?,?,?,?)",
-                        (form["slug"], form["name"], form["event_date"], form["status"], form["access_code"] or None,
-                         form["email_subject"], form["email_body"], now_iso()))
+                        "INSERT INTO events (slug, name, client_name, event_date, status, access_code, email_subject, "
+                        "email_body, name_font, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (form["slug"], form["name"], form["client_name"] or None, form["event_date"], form["status"],
+                         form["access_code"] or None, form["email_subject"], form["email_body"], render.DEFAULT_FONT,
+                         now_iso()))
                     ev_id = cur.lastrowid
                 else:
                     ev_id = ev["id"]
-                    db.execute("UPDATE events SET slug=?, name=?, event_date=?, status=?, access_code=?, "
+                    db.execute("UPDATE events SET slug=?, name=?, client_name=?, event_date=?, status=?, access_code=?, "
                                "email_subject=?, email_body=? WHERE id=?",
-                               (form["slug"], form["name"], form["event_date"], form["status"],
-                                form["access_code"] or None, form["email_subject"], form["email_body"], ev_id))
+                               (form["slug"], form["name"], form["client_name"] or None, form["event_date"],
+                                form["status"], form["access_code"] or None, form["email_subject"], form["email_body"],
+                                ev_id))
                 db.execute("UPDATE events SET " + ", ".join(f"{k}=?" for k in DONE_FIELDS) + " WHERE id=?",
                            [form[k] for k in DONE_FIELDS] + [ev_id])
                 if has_upload:
@@ -494,7 +533,8 @@ def create_app(overrides=None):
                     except render.TemplateError as exc:
                         db.rollback()
                         errors["template"] = str(exc)
-                        return render_template("admin/session_form.html", ev=ev, form=form, errors=errors)
+                        return render_template("admin/session_form.html", ev=ev, form=form, errors=errors,
+                                   done_samples=DONE_SAMPLES)
                     old = [ev["template_file"], ev["preview_file"]] if ev else []
                     db.execute("UPDATE events SET template_file=?, template_kind=?, page_w=?, page_h=?, preview_file=?, "
                                "design_updated_at=? WHERE id=?", (info["template_file"], info["template_kind"],
@@ -505,11 +545,12 @@ def create_app(overrides=None):
                             (tpl_dir / f).unlink(missing_ok=True)
                 db.commit()
                 if ev is None or has_upload:
-                    flash("Template uploaded. Now drag the name box to where the name should print.", "ok")
+                    flash("Template uploaded. Now drag the name box to where the name should appear.", "ok")
                     return redirect(url_for("admin_design", event_id=ev_id))
                 flash("Session saved.", "ok")
                 return redirect(url_for("admin_participants", event_id=ev_id))
-        return render_template("admin/session_form.html", ev=ev, form=form, errors=errors)
+        return render_template("admin/session_form.html", ev=ev, form=form, errors=errors,
+                                   done_samples=DONE_SAMPLES)
 
     @app.route("/admin/sessions/new", methods=["GET", "POST"])
     @admin_required
@@ -544,7 +585,8 @@ def create_app(overrides=None):
             if f.get("then") == "qr":
                 return redirect(url_for("admin_qr", event_id=event_id))
             return redirect(url_for("admin_design", event_id=event_id))
-        return render_template("admin/design.html", ev=ev, font_choices=font_choices())
+        return render_template("admin/design.html", ev=ev, font_choices=font_choices(),
+                               default_font=render.DEFAULT_FONT, default_label=render.FONTS[render.DEFAULT_FONT][0])
 
     @app.get("/admin/sessions/<int:event_id>/template.png")
     @admin_required
@@ -570,12 +612,35 @@ def create_app(overrides=None):
         pdf = render.render_certificate(ev, name, tpl_dir)
         return Response(pdf, mimetype="application/pdf", headers={"Cache-Control": "no-store"})
 
-    @app.get("/admin/sessions/<int:event_id>/qr")
+    @app.route("/admin/sessions/<int:event_id>/qr", methods=["GET", "POST"])
     @admin_required
     def admin_qr(event_id):
         ev = event_by_id(event_id)
+        db = get_db()
+        slug_error, slug_value = None, ev["slug"]
+        if request.form.get("action") == "layout":
+            layout = "landscape" if request.form.get("qr_layout") == "landscape" else "portrait"
+            db.execute("UPDATE events SET qr_layout=? WHERE id=?", (layout, event_id))
+            db.commit()
+            return redirect(url_for("admin_qr", event_id=event_id))
+        if request.form.get("action") == "slug":
+            # the part of the link after /r/; the QR code changes with it
+            slug_value = (request.form.get("slug") or "").strip().lower()
+            slug_value = re.sub(r"[\s_]+", "-", slug_value)
+            taken = db.execute("SELECT id FROM events WHERE slug=?", (slug_value,)).fetchone()
+            if not SLUG_RE.match(slug_value):
+                slug_error = SLUG_RULE
+            elif taken and taken["id"] != event_id:
+                slug_error = SLUG_TAKEN
+            else:
+                if slug_value != ev["slug"]:
+                    db.execute("UPDATE events SET slug=? WHERE id=?", (slug_value, event_id))
+                    db.commit()
+                    flash("Link changed. The QR code below is the new one; codes printed before no longer work.", "ok")
+                return redirect(url_for("admin_qr", event_id=event_id))
         link = f"{app.config['BASE_URL']}/r/{ev['slug']}"
-        return render_template("admin/qr.html", ev=ev, link=link, qr_svg=render.qr_svg(link))
+        return render_template("admin/qr.html", ev=ev, link=link, qr_svg=render.qr_svg(link),
+                               slug_error=slug_error, slug_value=slug_value)
 
     @app.get("/admin/sessions/<int:event_id>/qr.<fmt>")
     @admin_required
@@ -597,7 +662,7 @@ def create_app(overrides=None):
         new = "closed" if ev["status"] == "open" else "open"
         get_db().execute("UPDATE events SET status=? WHERE id=?", (new, event_id))
         get_db().commit()
-        flash(f"Registration {'closed' if new == 'closed' else 'opened'} for {ev['name']}.", "ok")
+        flash(f"{ev['name']} is now {'closed' if new == 'closed' else 'open'}.", "ok")
         return redirect(request.form.get("back") or url_for("admin_home"))
 
     @app.post("/admin/sessions/<int:event_id>/duplicate")
@@ -608,7 +673,7 @@ def create_app(overrides=None):
         name = f"{ev['name']} (copy)"
         slug = unique_slug(db, slugify(name))
         copied = ("name_x", "name_y", "name_w", "name_size", "name_font", "name_color", "name_align", "name_case",
-                  "email_subject", "email_body") + DONE_FIELDS
+                  "email_subject", "email_body", "client_name", "qr_layout") + DONE_FIELDS
         cur = db.execute(
             f"INSERT INTO events (slug, name, event_date, status, access_code, created_at, {', '.join(copied)}) "
             f"VALUES ({', '.join('?' * (6 + len(copied)))})",
@@ -622,7 +687,7 @@ def create_app(overrides=None):
             db.execute("UPDATE events SET template_file=?, template_kind=?, page_w=?, page_h=?, preview_file=? WHERE id=?",
                        (f"{stem}{ext}", ev["template_kind"], ev["page_w"], ev["page_h"], f"{stem}-preview.png", new_id))
         db.commit()
-        flash("Session duplicated with the same design. Rename it and open registration when ready.", "ok")
+        flash("Session duplicated with the same design. Rename it and open the session when ready.", "ok")
         return redirect(url_for("admin_edit", event_id=new_id))
 
     @app.post("/admin/sessions/<int:event_id>/delete")
@@ -963,6 +1028,67 @@ def create_app(overrides=None):
             abort(404)
         return send_file(path, mimetype="font/ttf", max_age=86400)
 
+    # ================================================================ admin: email pictures and preview
+
+    picture_dir = data / mailer.PICTURE_DIR
+    picture_dir.mkdir(parents=True, exist_ok=True)
+
+    @app.post("/admin/email-pictures")
+    @admin_required
+    def admin_email_picture_upload():
+        """Store a picture for a certificate email; returns the key the message refers to it by."""
+        upload = request.files.get("picture")
+        if upload is None or not upload.filename:
+            return jsonify(error="Choose a picture to upload."), 400
+        raw = upload.read()
+        if len(raw) > 8 * 1024 * 1024:
+            return jsonify(error="That picture is larger than 8 MB."), 400
+        try:
+            img = Image.open(io.BytesIO(raw))
+            img.load()
+        except Exception:  # noqa: BLE001
+            return jsonify(error="That file isn't a picture. Use PNG, JPG or GIF."), 400
+        key = secrets.token_hex(6)
+        if img.format == "GIF" and len(raw) <= 3 * 1024 * 1024:
+            (picture_dir / f"{key}.gif").write_bytes(raw)  # kept as it is, so animations still play
+        else:
+            if img.width > 1200:  # wider than any email is shown; keeps emails small
+                img.thumbnail((1200, 100000), Image.LANCZOS)
+            out = io.BytesIO()
+            if img.mode in ("RGBA", "LA", "P") and (img.mode != "P" or "transparency" in img.info):
+                img.convert("RGBA").save(out, "PNG", optimize=True)
+                ext = "png"
+            else:
+                img.convert("RGB").save(out, "JPEG", quality=88, optimize=True)
+                ext = "jpg"
+            (picture_dir / f"{key}.{ext}").write_bytes(out.getvalue())
+        return jsonify(key=key)
+
+    @app.get("/admin/email-pictures/<key>")
+    @admin_required
+    def admin_email_picture(key):
+        path = mailer.picture_file(picture_dir, key)
+        if path is None:
+            abort(404)
+        return send_file(path, max_age=86400)
+
+    @app.post("/admin/email-preview")
+    @admin_required
+    def admin_email_preview():
+        """The certificate email as a participant receives it, from the session form's current (unsaved) text."""
+        f = request.form
+        ev = {"name": (f.get("name") or "").strip() or "Your session", "client_name": (f.get("client_name") or "").strip(),
+              "event_date": (f.get("event_date") or "").strip()}
+        p = {"full_name": "Nur Aisyah binti Rahman", "cert_code": "SAMPLE", "token": "preview"}
+        values = mailer.message_values(app.config["BASE_URL"], ev, p)
+        subject = mailer.fill((f.get("email_subject") or mailer.DEFAULT_SUBJECT), values)
+        body = mailer.fill((f.get("email_body") or mailer.DEFAULT_BODY).replace("\r\n", "\n"), values)
+        html_body = mailer.wrap_html(mailer.body_html(
+            body, lambda k: url_for("admin_email_picture", key=k) if mailer.picture_file(picture_dir, k) else None))
+        cfg = mailer.mail_settings(get_db(), app.config)
+        return render_template("admin/email_preview.html", subject=subject, sender=cfg["MAIL_FROM"],
+                               html_body=html_body, filename=f"Certificate_{safe_filename(p['full_name'])}.pdf")
+
     # ================================================================ admin: email
 
     @app.route("/admin/email", methods=["GET", "POST"])
@@ -973,18 +1099,16 @@ def create_app(overrides=None):
         action = request.form.get("action") if request.method == "POST" else None
         if action == "save":
             form = {k: (request.form.get(k) or "").strip() for k in (
-                "from_name", "from_email", "reply_to", "smtp_host", "smtp_port", "smtp_user", "security")}
+                "from_name", "from_email", "smtp_host", "smtp_port", "smtp_user", "security")}
             security = form["security"] if form["security"] in ("starttls", "ssl", "none") else "starttls"
             if not EMAIL_RE.match(form["from_email"]):
                 errors["from_email"] = "Enter the address emails should come from."
-            if form["reply_to"] and not EMAIL_RE.match(form["reply_to"]):
-                errors["reply_to"] = "Enter a valid address, or leave it empty."
             port = form["smtp_port"] or ("465" if security == "ssl" else "587")
             if form["smtp_host"] and not (port.isdigit() and 0 < int(port) < 65536):
                 errors["smtp_port"] = "Use a port number such as 587 or 465."
             if not errors:
                 values = {"MAIL_FROM": mailer.format_sender(form["from_name"][:100], form["from_email"]),
-                          "MAIL_REPLY_TO": form["reply_to"], "SMTP_HOST": form["smtp_host"],
+                          "SMTP_HOST": form["smtp_host"],
                           "SMTP_PORT": int(port), "SMTP_USER": form["smtp_user"],
                           "SMTP_SSL": security == "ssl", "SMTP_STARTTLS": security == "starttls"}
                 # the password field is left blank to keep the saved one
@@ -1004,8 +1128,7 @@ def create_app(overrides=None):
                 msg["Subject"] = f"{app.config['APP_NAME']} test email"
                 msg["From"] = cfg["MAIL_FROM"]
                 msg["To"] = to
-                if cfg["MAIL_REPLY_TO"]:
-                    msg["Reply-To"] = cfg["MAIL_REPLY_TO"]
+                msg["Auto-Submitted"] = "auto-generated"
                 msg.set_content("If you can read this, certificate emails will be delivered.")
                 try:
                     mailer.deliver(cfg, msg, Path(app.config["DATA_DIR"]) / "outbox")
@@ -1015,7 +1138,7 @@ def create_app(overrides=None):
                     result = ("warn", f"Sending failed: {exc.__class__.__name__}: {exc}")
         if form is None:
             name, addr = parseaddr(cfg["MAIL_FROM"])
-            form = {"from_name": name, "from_email": addr, "reply_to": cfg["MAIL_REPLY_TO"],
+            form = {"from_name": name, "from_email": addr,
                     "smtp_host": cfg["SMTP_HOST"], "smtp_port": str(cfg["SMTP_PORT"]), "smtp_user": cfg["SMTP_USER"],
                     "security": "ssl" if cfg["SMTP_SSL"] else ("starttls" if cfg["SMTP_STARTTLS"] else "none")}
         stats = {r["email_status"]: r["n"] for r in db.execute(

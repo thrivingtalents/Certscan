@@ -5,25 +5,30 @@
 <div class="crumb"><a href="{{ url_for('admin_home') }}">Sessions</a> / New</div>
 <div class="head"><div><h1>New session</h1><div class="sub">Each session gets its own design, QR code and participant list.</div></div></div>
 {% endif %}
-<form method="post" enctype="multipart/form-data" style="max-width:720px">
+<form method="post" enctype="multipart/form-data" style="max-width:720px" id="sessionForm">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="card pad">
     <h2 style="margin-bottom:16px">Session details</h2>
-    <div class="field {{ 'has-err' if errors.name }}"><label class="lbl" for="name">Session name</label>
-      <input id="name" type="text" name="name" value="{{ form.name }}" placeholder="e.g. Digital Skills Workshop 2026" required>
-      {% if errors.name %}<div class="err">{{ errors.name }}</div>{% endif %}</div>
+    <div class="row" style="align-items:flex-start;gap:16px">
+      <div class="field {{ 'has-err' if errors.name }}" style="flex:3;min-width:220px"><label class="lbl" for="name">Session name</label>
+        <input id="name" type="text" name="name" value="{{ form.name }}" placeholder="e.g. Digital Skills Workshop 2026" required>
+        {% if errors.name %}<div class="err">{{ errors.name }}</div>{% endif %}</div>
+      <div class="field" style="flex:2;min-width:200px"><label class="lbl" for="client">Client name <span class="faint">(optional)</span></label>
+        <input id="client" type="text" name="client_name" value="{{ form.client_name or '' }}" placeholder="e.g. Petronas">
+        <div class="hint">Shown on the session card and searchable.</div></div>
+    </div>
     <div class="row" style="align-items:flex-start;gap:16px">
       <div class="field" style="flex:1;min-width:200px"><label class="lbl" for="date">Date</label>
         <input id="date" type="text" name="event_date" value="{{ form.event_date or '' }}" placeholder="e.g. 27 September 2026">
         <div class="hint">Shown to participants and usable in the email as {date}.</div></div>
       <div class="field" style="flex:1;min-width:200px"><label class="lbl" for="code">Attendance code <span class="faint">(optional)</span></label>
         <input id="code" type="text" name="access_code" value="{{ form.access_code or '' }}" placeholder="e.g. HALL-A">
-        <div class="hint">If set, people must type it to register. Announce it only at the venue.</div></div>
+        <div class="hint">If set, people must type it to get their certificate. Announce it only at the venue.</div></div>
     </div>
-    <div class="field {{ 'has-err' if errors.slug }}"><label class="lbl" for="slug">Registration link</label>
+    <div class="field {{ 'has-err' if errors.slug }}"><label class="lbl" for="slug">Session link (in the QR code)</label>
       <div class="prefix"><span>{{ base_url }}/r/</span><input id="slug" type="text" name="slug" value="{{ form.slug or '' }}" placeholder="created from the name"></div>
       {% if errors.slug %}<div class="err">{{ errors.slug }}</div>{% else %}<div class="hint">Changing this after printing the QR code will break the printed code.</div>{% endif %}</div>
-    <div class="field"><label class="lbl">Registration</label>
+    <div class="field"><label class="lbl">Session status</label>
       <div class="seg" style="max-width:280px">
         <label><input type="radio" name="status" value="open" {{ 'checked' if form.status != 'closed' }}><span>Open</span></label>
         <label><input type="radio" name="status" value="closed" {{ 'checked' if form.status == 'closed' }}><span>Closed</span></label>
@@ -34,17 +39,43 @@
   </div>
 
   <div class="card pad" style="margin-top:18px">
-    <h2 style="margin-bottom:4px">Certificate email</h2>
-    <p class="muted small" style="margin-bottom:16px">Placeholders: <code>{name}</code> <code>{session}</code> <code>{date}</code> <code>{download_link}</code>. The PDF is attached automatically.</p>
+    <div class="row" style="margin-bottom:4px"><h2>Certificate email</h2><div class="spacer"></div>
+      <button class="btn sm o" type="button" id="mailPreviewBtn" data-url="{{ url_for('admin_email_preview') }}">Preview email</button></div>
+    <p class="muted small" style="margin-bottom:16px">Placeholders: <code>{name}</code> <code>{session}</code> <code>{client}</code> <code>{date}</code> <code>{download_link}</code>. The PDF is attached automatically.</p>
     <div class="field"><label class="lbl" for="subj">Subject</label><input id="subj" type="text" name="email_subject" value="{{ form.email_subject or '' }}"></div>
-    <div class="field" style="margin-bottom:0"><label class="lbl" for="body">Message</label><textarea id="body" name="email_body" rows="9">{{ form.email_body or '' }}</textarea></div>
+    <div class="field" style="margin-bottom:0"><label class="lbl" for="body">Message</label>
+      <div class="mailtools">
+        <button class="btn sm o" type="button" id="addLink">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>Add link</button>
+        <button class="btn sm o" type="button" id="addPic">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>Add picture</button>
+        <input type="file" id="picFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+        <span class="small muted" id="picStatus" role="status"></span>
+      </div>
+      <div class="linkpanel" id="linkPanel" hidden>
+        <div class="row" style="align-items:flex-end;gap:10px">
+          <div style="flex:1;min-width:160px"><label class="lbl" for="lnText">Text to show</label><input id="lnText" type="text" placeholder="e.g. Give us your feedback"></div>
+          <div style="flex:2;min-width:200px"><label class="lbl" for="lnUrl">Link</label><input id="lnUrl" type="url" placeholder="https://"></div>
+          <button class="btn sm" type="button" id="lnInsert">Insert</button>
+          <button class="btn sm o" type="button" id="lnCancel">Cancel</button>
+        </div>
+        <div class="err" id="lnErr" hidden>Enter a full link starting with https://</div>
+      </div>
+      <textarea id="body" name="email_body" rows="10">{{ form.email_body or '' }}</textarea>
+      <div class="hint">A link shows as <code>[text](https://…)</code> and a picture as <code>{picture:…}</code> here; in the email they appear as a clickable link and the picture. Web addresses are clickable too.</div>
+      <div class="mailpics" id="mailPics"></div>
+    </div>
   </div>
 
   <div class="card pad" style="margin-top:18px">
     <div class="row" style="margin-bottom:4px"><h2>Thank-you page</h2><div class="spacer"></div>
       {% if ev %}<a class="btn sm o" href="{{ url_for('admin_done_preview', event_id=ev.id) }}" target="_blank">Preview</a>{% endif %}</div>
-    <p class="muted small" style="margin-bottom:16px">The last page participants see after registering. Leave a box empty to use the default.
-      Placeholders: <code>{name}</code> <code>{first_name}</code> <code>{session}</code> <code>{date}</code>.{% if ev %} Save before previewing.{% endif %}</p>
+    <p class="muted small" style="margin-bottom:12px">The last page participants see after getting their certificate. Leave a box empty to use the default.
+      Placeholders: <code>{name}</code> <code>{first_name}</code> <code>{session}</code> <code>{client}</code> <code>{date}</code>.{% if ev %} Save before previewing.{% endif %}</p>
+    <div class="samples">
+      <span class="lbl" style="margin:0">Start from a sample:</span>
+      {% for s in done_samples %}<button class="btn sm o" type="button" data-sample="{{ loop.index0 }}">{{ s.label }}</button>{% endfor %}
+    </div>
     <div class="field"><label class="lbl" for="dh">Heading</label>
       <input id="dh" type="text" name="done_heading" value="{{ form.done_heading or '' }}" placeholder="You're all set"></div>
     <div class="field"><label class="lbl" for="dt">Title</label>
@@ -65,5 +96,16 @@
   <div class="row" style="margin-top:18px"><button class="btn">{{ 'Save changes' if ev else 'Create session and place the name' }}</button>
     <a class="btn o" href="{{ url_for('admin_participants', event_id=ev.id) if ev else url_for('admin_home') }}">Cancel</a></div>
 </form>
-
+<dialog class="maildialog" id="mailDialog" aria-label="Email preview">
+  <div class="dhead"><b>Email preview</b><button type="button" class="btn sm o" id="mailDialogClose">✕ Close</button></div>
+  <iframe id="mailFrame" title="Email preview"></iframe>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+window.DONE_SAMPLES = {{ done_samples|tojson }};
+window.PICTURE_UPLOAD = {{ url_for('admin_email_picture_upload')|tojson }};
+window.PICTURE_URL = {{ url_for('admin_email_picture', key='KEY')|tojson }};
+</script>
+<script src="{{ url_for('static', filename='session_form.js') }}"></script>
 {% endblock %}

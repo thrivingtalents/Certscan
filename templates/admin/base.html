@@ -6,12 +6,20 @@
 <div class="shell">
   <aside class="side">
     <a class="orglogo" href="{{ url_for('admin_home') }}"><img src="{{ url_for('static', filename='brand/logo.png') }}" alt="Thriving Talents"><span>{{ app_name }} · Admin</span></a>
+    <form class="sidesearch" method="get" action="{{ url_for('admin_home') }}" role="search">
+      <label class="sidelbl" for="sideq">Find a certificate</label>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="sideq" type="search" name="q" value="{{ q or '' }}" placeholder="Name or client…" aria-label="Search certificates by participant name, session or client">
+    </form>
     <nav class="nav">
       <a href="{{ url_for('admin_home') }}" class="{{ 'on' if nav == 'sessions' }}">Sessions</a>
-      <a href="{{ url_for('admin_email') }}" class="{{ 'on' if nav == 'email' }}">Email setup</a>
       <a href="{{ url_for('admin_fonts') }}" class="{{ 'on' if nav == 'fonts' }}">Fonts</a>
     </nav>
-    <form method="post" action="{{ url_for('admin_logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm">Log out</button></form>
+    <div class="sidefoot">
+      <nav class="nav"><a href="{{ url_for('admin_email') }}" class="{{ 'on' if nav == 'email' }}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>Email setup</a></nav>
+      <form method="post" action="{{ url_for('admin_logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="btn sm">Log out</button></form>
+    </div>
   </aside>
   <main class="main">
     {% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}{% endwith %}

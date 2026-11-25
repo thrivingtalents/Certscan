@@ -163,10 +163,10 @@ def test_full_flow():
         # CSRF is enforced
         assert user.post(url, data={"full_name": "X Y", "email": "x@y.com"}).status_code == 400
 
-        # closing registration
+        # closing the session
         t = csrf(admin, "/admin")
         admin.post(f"/admin/sessions/{ev_id}/toggle", data={"csrf_token": t})
-        assert "Registration closed" in app.test_client().get(url).get_data(as_text=True)
+        assert "Session closed" in app.test_client().get(url).get_data(as_text=True)
 
         # second session: PDF template + attendance code + duplicate
         buf = io.BytesIO()
@@ -226,13 +226,13 @@ def test_email_settings():
 
         r = admin.post("/admin/email", data={
             "csrf_token": t, "action": "save", "from_name": "Thriving Talents", "from_email": "certs@tt.example",
-            "reply_to": "hello@tt.example", "smtp_host": "smtp.example.com", "smtp_port": "",
+            "smtp_host": "smtp.example.com", "smtp_port": "",
             "security": "ssl", "smtp_user": "login", "smtp_password": "s3cret-key"})
         assert r.status_code == 302
         db_file = Path(tmp) / "certqr.db"
         conn = connect(db_file)
         cfg = mailer.mail_settings(conn, app.config)
-        assert cfg["MAIL_FROM"] == '"Thriving Talents" <certs@tt.example>' and cfg["MAIL_REPLY_TO"] == "hello@tt.example"
+        assert cfg["MAIL_FROM"] == '"Thriving Talents" <certs@tt.example>' and "MAIL_REPLY_TO" not in cfg
         assert cfg["SMTP_HOST"] == "smtp.example.com" and cfg["SMTP_PORT"] == 465 and cfg["SMTP_SSL"] and not cfg["SMTP_STARTTLS"]
         assert cfg["SMTP_PASSWORD"] == "s3cret-key"
         assert b"s3cret-key" not in db_file.read_bytes()  # stored encrypted
@@ -250,7 +250,8 @@ def test_email_settings():
         r = admin.post("/admin/email", data={"csrf_token": t, "action": "test", "to": "me@tt.example"})
         assert "Outbox mode" in r.get_data(as_text=True)
         eml = next((Path(tmp) / "outbox").glob("*.eml")).read_bytes()
-        assert BytesParser(policy=policy.default).parsebytes(eml)["From"] == "new@tt.example"
+        test_msg = BytesParser(policy=policy.default).parsebytes(eml)
+        assert test_msg["From"] == "new@tt.example" and test_msg["Reply-To"] is None
 
         # a changed SECRET_KEY can't read the saved password, and says so
         cfg = mailer.mail_settings(conn, {**app.config, "SECRET_KEY": "different"})
@@ -633,7 +634,118 @@ def test_combined_pdf_with_pdf_design():
             assert sum(n in page for n in names) == 1, page
 
 
+def test_client_search_qr_and_email_extras():
+    import render
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        app = make_app(tmp)
+        admin, ev_id = logged_in_with_session(app, "Leadership Bootcamp")
+        db_file = Path(tmp) / "certqr.db"
+
+        # new sessions use Poppins Bold
+        conn = connect(db_file)
+        assert conn.execute("SELECT name_font FROM events WHERE id=?", (ev_id,)).fetchone()[0] == "poppins-bold"
+        conn.close()
+
+        # a client name is saved, shown on the session card and searchable
+        t = csrf(admin, f"/admin/sessions/{ev_id}/edit")
+        page = admin.get(f"/admin/sessions/{ev_id}/edit").get_data(as_text=True)
+        assert "Start from a sample" in page and "Session link" in page and "Registration" not in page
+        png = (ROOT / "samples" / "sample-template.png").read_bytes()
+        r = admin.post(f"/admin/sessions/{ev_id}/edit", data={
+            "csrf_token": t, "name": "Leadership Bootcamp", "client_name": "Petronas", "event_date": "",
+            "slug": "leadership-bootcamp", "status": "open", "email_subject": "Hi {name} from {client}",
+            "email_body": "Hello {name},\n\nSee [our site](https://thrivingtalents.com) or https://x.example/a.\n"
+                          "{picture:000000000000}\n{download_link}", "done_show_download": "1"})
+        assert r.status_code == 302, r.get_data(as_text=True)[:400]
+        assert "Petronas" in admin.get("/admin").get_data(as_text=True)
+        t = csrf(admin, f"/admin/sessions/{ev_id}/import")
+        admin.post(f"/admin/sessions/{ev_id}/import", data={
+            "csrf_token": t, "send_email": "1",
+            "file": (io.BytesIO(b"Name,Email\nSiti Zulaikha,siti@example.com\n"), "n.csv")},
+            content_type="multipart/form-data")
+        found = admin.get("/admin?q=zulaikha").get_data(as_text=True)
+        assert "Siti Zulaikha" in found and "Petronas" in found and "Leadership Bootcamp" in found
+        assert "Siti Zulaikha" not in admin.get("/admin?q=nobody-like-this").get_data(as_text=True)
+        assert "Leadership Bootcamp" in admin.get("/admin?q=petro").get_data(as_text=True)  # by client name
+        assert "Siti Zulaikha" not in admin.get("/admin?q=%25").get_data(as_text=True)  # % is searched literally
+
+        # the QR link can be changed on the QR page, and the poster can be landscape
+        t = csrf(admin, f"/admin/sessions/{ev_id}/qr")
+        r = admin.post(f"/admin/sessions/{ev_id}/qr", data={"csrf_token": t, "action": "slug", "slug": "Lead 2026"})
+        assert r.status_code == 302
+        assert "https://cert.test/r/lead-2026" in admin.get(f"/admin/sessions/{ev_id}/qr").get_data(as_text=True)
+        assert app.test_client().get("/r/lead-2026").status_code == 200
+        r = admin.post(f"/admin/sessions/{ev_id}/qr", data={"csrf_token": t, "action": "slug", "slug": "x"})
+        assert "3-60 lowercase letters" in r.get_data(as_text=True)
+        admin.post(f"/admin/sessions/{ev_id}/qr", data={"csrf_token": t, "action": "layout", "qr_layout": "landscape"})
+        page = admin.get(f"/admin/sessions/{ev_id}/qr").get_data(as_text=True)
+        assert 'class="poster land"' in page and "size:A4 landscape" in page
+
+        # pictures for emails: uploaded, served to the admin, and sent inside the email
+        from PIL import Image
+        pic = io.BytesIO()
+        Image.new("RGB", (2400, 600), "#6D5BFF").save(pic, "PNG")
+        r = admin.post("/admin/email-pictures", data={"csrf_token": t, "picture": (io.BytesIO(pic.getvalue()), "b.png")},
+                       content_type="multipart/form-data")
+        key = r.get_json()["key"]
+        assert Image.open(io.BytesIO(admin.get(f"/admin/email-pictures/{key}").data)).width == 1200  # made smaller
+        bad = admin.post("/admin/email-pictures", data={"csrf_token": t, "picture": (io.BytesIO(b"nope"), "x.png")},
+                         content_type="multipart/form-data")
+        assert bad.status_code == 400
+        conn = connect(db_file)
+        conn.execute("UPDATE events SET email_body=? WHERE id=?",
+                     (f"Hello {{name}},\n[Feedback form](https://forms.gle/abc)\n{{picture:{key}}}\nBye", ev_id))
+        conn.commit()
+        conn.close()
+        assert drain(app) == 2  # the certificate is made, then emailed
+        msg = BytesParser(policy=policy.default).parsebytes(next((Path(tmp) / "outbox").glob("*.eml")).read_bytes())
+        assert msg["Subject"] == "Hi Siti Zulaikha from Petronas"
+        assert msg["Reply-To"] is None and msg["Auto-Submitted"] == "auto-generated"
+        html_part = msg.get_body(("html",))
+        text_part = msg.get_body(("plain",))
+        assert '<a href="https://forms.gle/abc"' in html_part.get_content() and "cid:" in html_part.get_content()
+        assert "Feedback form (https://forms.gle/abc)" in text_part.get_content()
+        assert "picture:" not in text_part.get_content() and "Please don't reply" in text_part.get_content()
+        images = [p for p in msg.walk() if p.get_content_maintype() == "image"]
+        assert len(images) == 1 and images[0]["Content-ID"][1:-1] in html_part.get_content()
+        assert [a.get_filename() for a in msg.iter_attachments()] == ["Certificate_Siti_Zulaikha.pdf"]
+
+        # the email preview uses the form's unsaved text
+        t = csrf(admin, f"/admin/sessions/{ev_id}/edit")
+        prev = admin.post("/admin/email-preview", data={
+            "csrf_token": t, "name": "Preview Day", "client_name": "Acme", "email_subject": "For {client}",
+            "email_body": f"Dear {{name}}\n<b>bold?</b> [Site](https://a.example)\n{{picture:{key}}}"}).get_data(as_text=True)
+        assert "For Acme" in prev and "Dear Nur Aisyah" in prev and "&lt;b&gt;bold?" in prev
+        assert '<a href="https://a.example"' in prev and f"/admin/email-pictures/{key}" in prev
+
+        # links in a message: trailing full stops stay outside, other HTML is escaped
+        html_out = mailer.body_html("Go to https://a.example/x. <script>", lambda k: None)
+        assert '<a href="https://a.example/x" ' in html_out and "</a>. &lt;script&gt;" in html_out
+
+    # a name on two lines stays centred on the box's middle instead of moving up
+    ev = {"page_w": 842, "page_h": 595, "name_x": .5, "name_y": .5, "name_w": .3, "name_size": .1,
+          "name_font": "poppins-bold", "name_color": "#000000", "name_align": "center", "name_case": "as_typed"}
+
+    def baselines(name):
+        ys = []
+
+        class Rec:
+            def __getattr__(self, attr):
+                return lambda *a: ys.append(a[1]) if attr == "drawCentredString" else None
+        render._draw_text_layer(Rec(), ev, name)
+        return ys
+    one = baselines("Ali")
+    two = baselines("Muhammad Aiman Hakimi bin Abdul Rahman Shah")
+    assert len(one) == 1 and len(two) == 2
+    font = render._font("poppins-bold")
+    _, fs = render.name_lines("Muhammad Aiman Hakimi bin Abdul Rahman Shah", font, 59.5, 0.3 * 842)
+    asc, desc = render.pdfmetrics.getAscentDescent(font, fs)
+    middle = (two[0] + two[1]) / 2 + (asc + desc) / 2
+    assert abs(middle - 595 / 2) < 0.01
+
+
 if __name__ == "__main__":
+    test_client_search_qr_and_email_extras()
     test_full_flow()
     test_email_settings()
     test_long_name_shrinks()

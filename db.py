@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS events (
     done_show_download INTEGER NOT NULL DEFAULT 1,
     done_show_view  INTEGER NOT NULL DEFAULT 1,
     design_updated_at TEXT,                            -- certificates made before this are re-made when re-sent
+    client_name     TEXT,                              -- organisation the session was run for (optional)
+    qr_layout       TEXT NOT NULL DEFAULT 'portrait',  -- QR poster: portrait | landscape
     created_at      TEXT NOT NULL
 );
 
@@ -113,6 +115,7 @@ EVENT_COLUMNS = {
     "done_heading": "TEXT", "done_title": "TEXT", "done_message": "TEXT", "done_button_label": "TEXT",
     "done_button_url": "TEXT", "done_show_download": "INTEGER NOT NULL DEFAULT 1",
     "done_show_view": "INTEGER NOT NULL DEFAULT 1", "design_updated_at": "TEXT",
+    "client_name": "TEXT", "qr_layout": "TEXT NOT NULL DEFAULT 'portrait'",
 }
 
 

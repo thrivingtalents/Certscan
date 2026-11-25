@@ -41,10 +41,10 @@
     const family = `"${opt.dataset.css}", sans-serif`;
     const text = applyCase(sample.value || "Nur Aisyah binti Rahman", radio("name_case"));
     const [lines, fs] = nameLines(text, family, +size.value * H, bw);
-    // like the server, a second line goes above the first, so the box grows upwards
+    // like the server, a two-line name stays centred on the same spot: the box grows up and down equally
     const bh1 = Math.max(fs * 1.35, 18), extra = (lines.length - 1) * fs * LINE_SPACING;
     box.style.left = (st.x * W - bw / 2) + "px";
-    box.style.top = (st.y * H - bh1 / 2 - extra) + "px";
+    box.style.top = (st.y * H - (bh1 + extra) / 2) + "px";
     box.style.width = bw + "px";
     box.style.height = (bh1 + extra) + "px";
     txt.style.fontFamily = family;
@@ -131,6 +131,13 @@
       .then(layout);
     document.fonts.addEventListener && document.fonts.addEventListener("loadingdone", layout);
   }
+
+  $("fpDefault").addEventListener("click", (e) => {
+    font.value = e.currentTarget.dataset.key;
+    font.dispatchEvent(new Event("change"));
+    const on = markFont();
+    if (on) $("fontpick").scrollTop = on.offsetTop - 40;
+  });
 
   $("pdfBtn").addEventListener("click", () => {
     const q = new URLSearchParams({

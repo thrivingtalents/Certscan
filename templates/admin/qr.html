@@ -2,42 +2,83 @@
 {% block title %}QR code{% endblock %}
 {% block main %}
 {% include "admin/_tabs.html" %}
-<div class="qrwrap">
-  <div class="poster">
-    <div class="posterlogo"><img src="{{ url_for('static', filename='brand/logo.png') }}" alt="Thriving Talents"></div>
-    <div class="ev-name">{{ ev.name }}</div>
-    <h2>Scan to get your<br>e-certificate</h2>
-    <div class="qr">{{ qr_svg|safe }}</div>
-    <div class="link">{{ link }}</div>
-    {% if ev.access_code %}<div class="code">Attendance code: <b>{{ ev.access_code }}</b></div>{% endif %}
+{% set land = ev.qr_layout == 'landscape' %}
+<div class="qrwrap {{ 'land' if land }}">
+  <div class="poster {{ 'land' if land }}">
+    <div class="ptext">
+      <div class="posterlogo"><img src="{{ url_for('static', filename='brand/logo.png') }}" alt="Thriving Talents"></div>
+      <div class="ev-name">{{ ev.name }}</div>
+      <h2>Scan to get your<br>e-certificate</h2>
+      {% if land %}<div class="link">{{ link }}</div>
+      {% if ev.access_code %}<div class="code">Attendance code: <b>{{ ev.access_code }}</b></div>{% endif %}{% endif %}
+    </div>
+    <div class="pqr">
+      <div class="qr">{{ qr_svg|safe }}</div>
+      {% if not land %}<div class="link">{{ link }}</div>
+      {% if ev.access_code %}<div class="code">Attendance code: <b>{{ ev.access_code }}</b></div>{% endif %}{% endif %}
+    </div>
   </div>
   <div class="stack noprint">
-    {% if ev.status != 'open' %}<div class="flash warn" style="margin:0">Registration is closed, so this code currently shows a “registration closed” page. Open it when the event starts.</div>{% endif %}
+    {% if ev.status != 'open' %}<div class="flash warn" style="margin:0">This session is closed, so the code currently shows a “session closed” page. Open it when the event starts.</div>{% endif %}
     <div class="card pad stack">
       <h2>Share this session</h2>
-      <div><label class="lbl">Registration link</label>
-        <div class="row" style="flex-wrap:nowrap"><input type="text" id="lnk" value="{{ link }}" readonly>
-          <button class="btn o" type="button" id="copy">Copy</button></div></div>
+      <form method="post" class="{{ 'has-err' if slug_error }} field" style="margin:0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="slug">
+        <label class="lbl" for="slugEdit">Session link</label>
+        <div class="row" style="flex-wrap:nowrap">
+          <div class="prefix" style="flex:1;min-width:0"><span>{{ base_url }}/r/</span><input id="slugEdit" type="text" name="slug" value="{{ slug_value }}" data-saved="{{ ev.slug }}" spellcheck="false" autocomplete="off"></div>
+          <button class="btn o" type="button" id="copy">Copy</button>
+          <button class="btn" id="slugSave" hidden>Save link</button>
+        </div>
+        {% if slug_error %}<div class="err">{{ slug_error }}</div>
+        {% else %}<div class="hint">Change the end of the link to something short and easy to type, e.g. <code>leadership-2026</code>. Save it before printing: the QR code changes with it.</div>{% endif %}
+      </form>
       <div class="row">
         <a class="btn" href="{{ url_for('admin_qr_file', event_id=ev.id, fmt='png') }}">Download PNG</a>
         <a class="btn o" href="{{ url_for('admin_qr_file', event_id=ev.id, fmt='svg') }}">Download SVG</a>
         <button class="btn o" type="button" onclick="window.print()">Print poster</button>
-        <a class="btn o" href="{{ link }}" target="_blank">Open registration page</a>
+        <a class="btn o" href="{{ link }}" target="_blank">Open session page</a>
       </div>
       <p class="hint">Use the SVG for large prints such as banners; it stays sharp at any size. Test the QR with your own phone before printing.</p>
     </div>
+    <form method="post" class="card pad">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="layout">
+      <h2 style="margin-bottom:4px">Poster layout</h2>
+      <p class="muted small" style="margin-bottom:12px">The poster prints on A4 in this direction.</p>
+      <div class="seg layoutseg" style="max-width:340px">
+        <label><input type="radio" name="qr_layout" value="portrait" {{ 'checked' if not land }} onchange="this.form.submit()"><span>
+          <svg width="16" height="20" viewBox="0 0 16 20" aria-hidden="true"><rect x="1" y="1" width="14" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>Portrait</span></label>
+        <label><input type="radio" name="qr_layout" value="landscape" {{ 'checked' if land }} onchange="this.form.submit()"><span>
+          <svg width="20" height="16" viewBox="0 0 20 16" aria-hidden="true"><rect x="1" y="1" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>Landscape</span></label>
+      </div>
+      <noscript><button class="btn sm o" style="margin-top:10px">Apply</button></noscript>
+    </form>
     {% if 'localhost' in link or '127.0.0.1' in link %}
     <div class="flash warn" style="margin:0">This link uses <b>{{ base_url }}</b>, which phones can't reach. Set <code>BASE_URL</code> to your public address before printing QR codes.</div>
     {% endif %}
   </div>
 </div>
+<style>@media print{@page{size:A4 {{ 'landscape' if land else 'portrait' }};margin:10mm}}</style>
 {% endblock %}
 {% block scripts %}
 <script>
-document.getElementById('copy').addEventListener('click', async (e) => {
-  const v = document.getElementById('lnk').value;
-  try { await navigator.clipboard.writeText(v); } catch (_) { document.getElementById('lnk').select(); document.execCommand('copy'); }
-  e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1500);
-});
+(function () {
+  const input = document.getElementById("slugEdit"), save = document.getElementById("slugSave"), copy = document.getElementById("copy");
+  const base = {{ (base_url ~ '/r/')|tojson }};
+  function changed() {
+    const dirty = input.value.trim().toLowerCase() !== input.dataset.saved;
+    save.hidden = !dirty; copy.hidden = dirty;   // copy only the saved link, the one in the QR code
+  }
+  input.addEventListener("input", changed);
+  changed();
+  copy.addEventListener("click", async () => {
+    const v = base + input.dataset.saved;
+    try { await navigator.clipboard.writeText(v); } catch (_) { input.select(); document.execCommand("copy"); }
+    copy.textContent = "Copied"; setTimeout(() => copy.textContent = "Copy", 1500);
+  });
+  input.form.addEventListener("submit", (e) => {
+    if (!confirm("Change the link to " + base + input.value.trim().toLowerCase() + " ?\n\nAny QR code you already printed or shared will stop working.")) e.preventDefault();
+  });
+})();
 </script>
 {% endblock %}

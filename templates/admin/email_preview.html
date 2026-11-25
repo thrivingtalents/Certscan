@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<base target="_blank">
+<title>Email preview · {{ app_name }}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head><body>
+<div class="mailprev">
+  <div class="flash warn">Preview with a sample name, using the text in the form (not yet saved). Links work; the download link is only an example.</div>
+  <div class="card">
+    <div class="mailhead">
+      <div class="subj">{{ subject }}</div>
+      <div class="small muted">From <b>{{ sender }}</b> · to Nur Aisyah binti Rahman</div>
+    </div>
+    <div class="mailbody">{{ html_body|safe }}</div>
+    <div class="mailatt">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+      {{ filename }} <span class="faint">(attached)</span>
+    </div>
+  </div>
+</div>
+</body></html>

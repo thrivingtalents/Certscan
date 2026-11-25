@@ -1,6 +1,6 @@
 {% extends "public/base.html" %}
 {% block box %}
-<p class="muted" style="margin-bottom:18px">Enter your name exactly as you want it printed on the certificate.</p>
+<p class="muted" style="margin-bottom:18px">Enter your name exactly as you want it to appear on the certificate.</p>
 <form method="post" novalidate>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="field {{ 'has-err' if errors.full_name }}"><label class="lbl" for="n">Full name</label>

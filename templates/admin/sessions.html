@@ -1,16 +1,50 @@
 {% extends "admin/base.html" %}{% set nav = 'sessions' %}
-{% block title %}Sessions{% endblock %}
+{% block title %}{{ 'Search' if q else 'Sessions' }}{% endblock %}
 {% block main %}
 <div class="head">
+  {% if q %}
+  <div><h1>Results for “{{ q }}”</h1><div class="sub">{{ found|length }}{{ '+' if found|length >= 200 }} certificate{{ '' if found|length == 1 else 's' }} · {{ events|length }} session{{ '' if events|length == 1 else 's' }} · <a href="{{ url_for('admin_home') }}">Clear search</a></div></div>
+  {% else %}
   <div><h1>Sessions</h1><div class="sub">{{ events|length }} session{{ '' if events|length == 1 else 's' }} · {{ total_sent }} certificates sent{% if not smtp %} · <a href="{{ url_for('admin_email') }}">Outbox mode: emails aren't being sent yet</a>{% endif %}</div></div>
+  {% endif %}
   <div class="spacer"></div>
   <a class="btn" href="{{ url_for('admin_new') }}">+ New session</a>
 </div>
+
+{% if q %}
+<h2 class="sectitle">Certificates</h2>
+<div class="card tablewrap" style="margin-bottom:28px">
+{% if found %}
+<table>
+  <thead><tr><th>Name on certificate</th><th>Client</th><th>Session</th><th>Email</th><th>Email status</th><th style="width:1%"></th></tr></thead>
+  <tbody>
+  {% for r in found %}
+  <tr>
+    <td style="font-weight:500">{{ r.full_name }}</td>
+    <td>{{ r.client_name or '—' }}</td>
+    <td><a href="{{ url_for('admin_participants', event_id=r.event_id, q=q) }}">{{ r.session_name }}</a></td>
+    <td class="muted">{{ r.email or '—' }}</td>
+    <td><span class="pill {{ r.email_status }}">{{ statuses.get(r.email_status, r.email_status) }}</span></td>
+    <td><div class="row" style="flex-wrap:nowrap;gap:6px">
+      <a class="btn sm" href="{{ url_for('admin_pdf', pid=r.id) }}?dl=1">Download</a>
+      <a class="btn sm o" href="{{ url_for('admin_pdf', pid=r.id) }}" target="_blank">View</a></div></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<div class="empty" style="padding:28px 20px"><p class="muted">No certificate matches “{{ q }}” by name, email, session or client.</p></div>{% endif %}
+</div>
+<h2 class="sectitle">Sessions</h2>
+{% endif %}
+
 {% if not events %}
 <div class="card empty">
+  {% if q %}<p class="muted">No session or client name matches “{{ q }}”.</p>
+  {% else %}
   <h2>No sessions yet</h2>
   <p class="muted" style="margin:8px 0 18px">Create a session, upload your certificate design and you'll get a QR code for the event.</p>
   <a class="btn" href="{{ url_for('admin_new') }}">Create your first session</a>
+  {% endif %}
 </div>
 {% else %}
 <div class="grid">
@@ -24,10 +58,14 @@
         <h2><a href="{{ url_for('admin_participants', event_id=e.id) }}" style="color:inherit;text-decoration:none">{{ e.name }}</a></h2>
         <span class="pill {{ e.status }}">{{ 'Open' if e.status == 'open' else 'Closed' }}</span>
       </div>
+      <div class="client {{ 'none' if not e.client_name }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M16 9h2a2 2 0 0 1 2 2v10M8 7h4M8 11h4M8 15h4M2 21h20"/></svg>
+        {% if e.client_name %}<span>{{ e.client_name }}</span>{% else %}<a href="{{ url_for('admin_edit', event_id=e.id) }}">Add client name</a>{% endif %}
+      </div>
       <div class="muted small" style="margin-top:4px">{{ e.event_date or 'No date' }} · /r/{{ e.slug }}</div>
     </div>
     <div class="stats">
-      <div><b>{{ e.n_total }}</b>registered</div><div><b>{{ e.n_sent }}</b>emailed</div>
+      <div><b>{{ e.n_total }}</b>certificates</div><div><b>{{ e.n_sent }}</b>emailed</div>
       {% if e.n_failed %}<div style="color:var(--bad)"><b style="color:var(--bad)">{{ e.n_failed }}</b>failed</div>{% endif %}
     </div>
     <div class="acts">

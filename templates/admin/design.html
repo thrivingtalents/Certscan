@@ -18,9 +18,17 @@
         <div class="h l" data-h="l"></div><div class="h r" data-h="r"></div>
       </div>
     </div>
-    <p class="hint" style="margin-top:12px">Drag the box to where the name should print. Drag the side handles to set the maximum width; names too long for one line move onto two. Arrow keys nudge it.</p>
+    <p class="hint" style="margin-top:12px">Drag the box to where the name should appear. Drag the side handles to set the maximum width; names too long for one line move onto two, staying centred on the same spot. Arrow keys nudge it.</p>
   </div>
   <div class="card panel">
+    <div class="sec saveactions">
+      <div class="row" style="flex-wrap:nowrap">
+        <button class="btn" type="submit" style="flex:1">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3M7 21v-7h10v7"/></svg>Save certificate</button>
+        <button class="btn o" type="button" id="pdfBtn">Preview PDF</button>
+      </div>
+      <button class="btn o block" type="submit" style="height:40px;font-size:14px;margin-top:8px" onclick="document.getElementById('then').value='qr'">Save and get QR code</button>
+    </div>
     <div class="sec">
       <label class="lbl" for="sample">Try a name</label>
       <input type="text" id="sample" value="Nur Aisyah binti Rahman">
@@ -30,6 +38,7 @@
         <span class="lbl" style="margin:0">Font</span>
         <span class="small muted">Selected: <b id="fpCurrent" style="color:var(--accent-ink)"></b></span>
       </div>
+      <button type="button" class="linkbtn small" id="fpDefault" data-key="{{ default_font }}" style="margin-bottom:8px">Use the default font ({{ default_label }})</button>
       {# the list below is what admins click; the select keeps the form value and feeds the live preview #}
       <select name="name_font" id="font" class="sr-only" tabindex="-1" aria-hidden="true">
         {% for group, items in font_choices %}<optgroup label="{{ group }}">
@@ -41,7 +50,7 @@
           {% for key, label, css in items %}<button type="button" class="fp-item" role="option" data-key="{{ key }}" data-label="{{ label }}"
               aria-selected="{{ 'true' if ev.name_font == key else 'false' }}">
             <span class="fp-sample" style="font-family:'{{ css }}', sans-serif">Nur Aisyah</span>
-            <span class="fp-label">{{ label }}</span>
+            <span class="fp-label">{{ label }}{% if key == default_font %} <em class="fp-default">Default</em>{% endif %}</span>
             <span class="fp-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
           </button>{% endfor %}
         {% endfor %}
@@ -62,13 +71,6 @@
         {% for v, l in [('as_typed','As typed'),('title','Title Case'),('upper','CAPS')] %}<label><input type="radio" name="name_case" value="{{ v }}" {{ 'checked' if ev.name_case == v }}><span>{{ l }}</span></label>{% endfor %}
       </div>
       <p class="hint">Title Case fixes “nur aisyah BINTI rahman” into “Nur Aisyah binti Rahman”.</p>
-    </div>
-    <div class="sec stack">
-      <button class="btn block" type="submit" onclick="document.getElementById('then').value='qr'">Save and get QR code</button>
-      <div class="row" style="flex-wrap:nowrap">
-        <button class="btn o" type="submit" style="flex:1">Save</button>
-        <button class="btn o" type="button" id="pdfBtn" style="flex:1">Preview PDF</button>
-      </div>
     </div>
   </div>
 </div>

@@ -6,11 +6,12 @@ Participants scan a QR code, type their name and email, check a preview, and get
 
 **Admin panel** (`/admin`)
 - Password login
-- Sessions: create, edit, open/close registration, duplicate (reuse a design), delete
+- Sessions: create, edit, open/close, duplicate (reuse a design), delete; optional client name on each session
+- Search (sidebar): find certificates by participant name or email, session or client name
 - Upload a certificate design as PNG, JPG or a one-page PDF
 - Drag-and-drop editor to place the `[FULL NAME]` box, with font (17 built in, including script/curvy fonts, plus any you upload), size, colour, alignment and letter case (As typed / Title Case / CAPS). Names too long for one line move onto two lines.
 - Preview a sample PDF before saving
-- QR code page: printable poster, PNG and SVG downloads, copy link
+- QR code page: printable poster (portrait or landscape), PNG and SVG downloads, editable and copyable link
 - Participants table: search, filter by email status, download or view one certificate, download everyone (or just the ticked ones) as one multi-page PDF, or as separate files in a ZIP, resend, fix a typo (regenerates the PDF and re-sends it), remove
 - Bulk import: upload an Excel (.xlsx) or CSV file of names (with an optional Email column) and a certificate is made for every name, optionally emailed
 - CSV export (opens correctly in Excel)
@@ -80,7 +81,7 @@ Gmail works for small tests only: it needs an App Password, it caps you at rough
 
 `MAIL_FROM` must be an address your provider has verified, e.g. `MAIL_FROM=Digital Skills Workshop <certificates@yourdomain.com>`.
 
-The sender name, sender email, reply-to address and mail server can also be changed at any time in the admin panel under **Email setup**, with no restart. Values saved there override `.env`, and the mail password is stored encrypted with `SECRET_KEY` (if `SECRET_KEY` changes, enter the password again). After changing anything, use **Email setup → Send test**. Each session's email subject and message can be edited under **Settings & email**, using `{name}`, `{session}`, `{date}` and `{download_link}`.
+The sender name, sender email and mail server can also be changed at any time in the admin panel under **Email setup**, with no restart. Values saved there override `.env`, and the mail password is stored encrypted with `SECRET_KEY` (if `SECRET_KEY` changes, enter the password again). After changing anything, use **Email setup → Send test**. Each session's email subject and message can be edited under **Settings & email**, using `{name}`, `{session}`, `{client}`, `{date}` and `{download_link}`. The message editor can add links (`[text](https://...)`) and pictures, which are sent inside the email. Emails are sent as no-reply: there is no Reply-To, and each ends with a note not to reply. To send from an address such as `no-reply@yourdomain.com` through Gmail, add it as an alias of the login account and as a Gmail "Send mail as" address.
 
 ## Deploying
 

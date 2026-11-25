@@ -16,13 +16,14 @@
         <div class="field" style="flex:1;min-width:200px"><label class="lbl" for="from_name">Sender name</label>
           <input id="from_name" type="text" name="from_name" value="{{ form.from_name }}" placeholder="e.g. Thriving Talents Certificates"></div>
         <div class="field {{ 'has-err' if errors.from_email }}" style="flex:1;min-width:200px"><label class="lbl" for="from_email">Sender email</label>
-          <input id="from_email" type="email" name="from_email" value="{{ form.from_email }}" placeholder="certificates@yourdomain.com" required>
+          <input id="from_email" type="email" name="from_email" value="{{ form.from_email }}" placeholder="no-reply@thrivingtalents.com" required>
           {% if errors.from_email %}<div class="err">{{ errors.from_email }}</div>{% endif %}</div>
       </div>
-      <div class="field {{ 'has-err' if errors.reply_to }}"><label class="lbl" for="reply_to">Replies go to <span class="faint">(optional)</span></label>
-        <input id="reply_to" type="email" name="reply_to" value="{{ form.reply_to }}" placeholder="Same as the sender email">
-        {% if errors.reply_to %}<div class="err">{{ errors.reply_to }}</div>{% endif %}</div>
-      <div class="hint" style="margin:0">Your mail service must allow the sender email: for Brevo, add it as a verified sender; for Gmail, use the account's own address or one of its “Send mail as” addresses. Otherwise emails are rejected or the address is replaced.</div>
+      <div class="hint" style="margin:0">Certificate emails are sent as no-reply: they end with “This is an automated email. Please don't reply to it.”
+        Use a no-reply address such as <code>no-reply@thrivingtalents.com</code>. Your mail service must allow it: with Gmail or Google Workspace, add it to the login account as an alias and under Gmail → Settings → Accounts → “Send mail as”; otherwise Gmail sends from the login address instead.</div>
+      {% if cfg.SMTP_USER and form.from_email and cfg.SMTP_USER|lower != form.from_email|lower and 'gmail' in (cfg.SMTP_HOST or '') %}
+      <div class="flash warn" style="margin:12px 0 0">The sender email differs from the login <b>{{ cfg.SMTP_USER }}</b>. Gmail only keeps it if it's a “Send mail as” address of that account. Send a test email and check the From line.</div>
+      {% endif %}
     </div>
 
     <div class="card pad">
