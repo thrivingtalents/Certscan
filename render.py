@@ -111,10 +111,10 @@ def process_template(upload_bytes, filename, dest_dir, stem):
             reader = PdfReader(io.BytesIO(upload_bytes))
             if reader.is_encrypted:
                 raise TemplateError("This PDF is password-protected. Upload an unlocked copy.")
-            page = reader.pages[0]
-            page.transfer_rotation_to_content()
             writer = PdfWriter()
-            writer.add_page(page)
+            # pypdf 7 only lets a page's content be rewritten once it belongs to a writer
+            page = writer.add_page(reader.pages[0])
+            page.transfer_rotation_to_content()
             buf = io.BytesIO()
             writer.write(buf)
         except TemplateError:
@@ -235,9 +235,9 @@ def _draw_text_layer(c, ev, name):
     c.setFont(font, size)
     align = ev["name_align"]
     for i, line in enumerate(lines):
-        # the last line sits where a one-line name would; extra lines go above it,
-        # since designs usually have free space above the name and a rule below it
-        baseline = cy + lead * (len(lines) - 1 - i) - (asc + desc) / 2
+        # the lines are centred as a block on the name box's middle, so a long name that wraps onto
+        # two lines stays in the same place as a short one instead of climbing up the page
+        baseline = cy + lead * ((len(lines) - 1) / 2 - i) - (asc + desc) / 2
         if align == "left":
             c.drawString(cx - max_w / 2, baseline, line)
         elif align == "right":
