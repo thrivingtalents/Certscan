@@ -442,7 +442,7 @@ def test_thank_you_page():
                    admin.get("/admin").get_data(as_text=True),
                    admin.get(f"/admin/sessions/{ev_id}/qr").get_data(as_text=True),
                    user.get("/r/no-such-session").get_data(as_text=True)):
-            assert 'brand/logo.png" alt="Thriving Talents"' in pg
+            assert re.search(r'brand/logo\.png\?v=[0-9a-f]{10}" alt="Thriving Talents"', pg)
         assert 'href="https://forms.gle/abc"' in page and "Give feedback" in page
         assert "Download PDF" not in page and "View certificate" in page
 
@@ -640,6 +640,20 @@ def test_client_search_qr_and_email_extras():
         app = make_app(tmp)
         admin, ev_id = logged_in_with_session(app, "Leadership Bootcamp")
         db_file = Path(tmp) / "certqr.db"
+
+        # static files carry a version and can be kept by browsers; the session cards use small thumbnails
+        home = admin.get("/admin").get_data(as_text=True)
+        css_url = re.search(r'href="(/static/app\.css\?v=[0-9a-f]{10})"', home).group(1)
+        r = admin.get(css_url)
+        assert r.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+        assert "fonts/web/Poppins-Bold.woff2" in r.get_data(as_text=True)
+        assert admin.get("/static/fonts/web/Poppins-Bold.woff2").data[:4] == b"wOF2"
+        thumb_url = re.search(r'src="(/admin/sessions/\d+/thumb\.jpg\?v=[^"]+)"', home).group(1).replace("&amp;", "&")
+        r = admin.get(thumb_url)
+        assert r.data[:2] == b"\xff\xd8" and "private" in r.headers["Cache-Control"]  # a JPEG
+        from PIL import Image as PILImage
+        assert max(PILImage.open(io.BytesIO(r.data)).size) <= 560
+        assert admin.get(thumb_url).data == r.data  # made once, then reused
 
         # new sessions use Poppins Bold
         conn = connect(db_file)

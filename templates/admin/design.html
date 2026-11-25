@@ -49,7 +49,7 @@
         {% for group, items in font_choices %}<div class="fp-group">{{ group }}</div>
           {% for key, label, css in items %}<button type="button" class="fp-item" role="option" data-key="{{ key }}" data-label="{{ label }}"
               aria-selected="{{ 'true' if ev.name_font == key else 'false' }}">
-            <span class="fp-sample" style="font-family:'{{ css }}', sans-serif">Nur Aisyah</span>
+            <span class="fp-sample" data-font="{{ css }}">Nur Aisyah</span>
             <span class="fp-label">{{ label }}{% if key == default_font %} <em class="fp-default">Default</em>{% endif %}</span>
             <span class="fp-tick" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></span>
           </button>{% endfor %}

@@ -1,23 +1,45 @@
-@font-face{font-family:"CQ Poppins Regular";src:url(fonts/Poppins-Regular.ttf)}
-@font-face{font-family:"CQ Poppins Medium";src:url(fonts/Poppins-Medium.ttf)}
-@font-face{font-family:"CQ Poppins Bold";src:url(fonts/Poppins-Bold.ttf)}
-@font-face{font-family:"CQ Serif Regular";src:url(fonts/DejaVuSerif.ttf)}
-@font-face{font-family:"CQ Serif Bold";src:url(fonts/DejaVuSerif-Bold.ttf)}
-@font-face{font-family:"CQ Serif Italic";src:url(fonts/DejaVuSerif-Italic.ttf)}
-@font-face{font-family:"CQ Montserrat Bold";src:url(fonts/Montserrat-Bold.ttf)}
-@font-face{font-family:"CQ Montserrat Medium";src:url(fonts/Montserrat-Medium.ttf)}
-@font-face{font-family:"CQ Raleway SemiBold";src:url(fonts/Raleway-SemiBold.ttf)}
-@font-face{font-family:"CQ Playfair Bold";src:url(fonts/PlayfairDisplay-Bold.ttf)}
-@font-face{font-family:"CQ Playfair Italic";src:url(fonts/PlayfairDisplay-Italic.ttf)}
-@font-face{font-family:"CQ Cinzel Bold";src:url(fonts/Cinzel-Bold.ttf)}
-@font-face{font-family:"CQ Lora Italic";src:url(fonts/Lora-Italic.ttf)}
-@font-face{font-family:"CQ Great Vibes";src:url(fonts/GreatVibes-Regular.ttf)}
-@font-face{font-family:"CQ Pinyon Script";src:url(fonts/PinyonScript-Regular.ttf)}
-@font-face{font-family:"CQ Allura";src:url(fonts/Allura-Regular.ttf)}
-@font-face{font-family:"CQ Dancing Script";src:url(fonts/DancingScript-Bold.ttf)}
-@font-face{font-family:"Poppins";src:url(fonts/Poppins-Regular.ttf);font-weight:400}
-@font-face{font-family:"Poppins";src:url(fonts/Poppins-Medium.ttf);font-weight:500}
-@font-face{font-family:"Poppins";src:url(fonts/Poppins-Bold.ttf);font-weight:700}
+/* Pages use small Latin-only .woff2 copies of the fonts (tools/make_web_fonts.py). For any other character
+   the browser falls back to the full .ttf, which it only downloads if such a character appears. */
+@font-face{font-family:"CQ Poppins Regular";src:url(fonts/Poppins-Regular.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Poppins Regular";src:url(fonts/web/Poppins-Regular.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Poppins Medium";src:url(fonts/Poppins-Medium.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Poppins Medium";src:url(fonts/web/Poppins-Medium.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Poppins Bold";src:url(fonts/Poppins-Bold.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Poppins Bold";src:url(fonts/web/Poppins-Bold.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Serif Regular";src:url(fonts/DejaVuSerif.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Serif Regular";src:url(fonts/web/DejaVuSerif.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Serif Bold";src:url(fonts/DejaVuSerif-Bold.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Serif Bold";src:url(fonts/web/DejaVuSerif-Bold.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Serif Italic";src:url(fonts/DejaVuSerif-Italic.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Serif Italic";src:url(fonts/web/DejaVuSerif-Italic.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Montserrat Bold";src:url(fonts/Montserrat-Bold.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Montserrat Bold";src:url(fonts/web/Montserrat-Bold.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Montserrat Medium";src:url(fonts/Montserrat-Medium.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Montserrat Medium";src:url(fonts/web/Montserrat-Medium.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Raleway SemiBold";src:url(fonts/Raleway-SemiBold.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Raleway SemiBold";src:url(fonts/web/Raleway-SemiBold.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Playfair Bold";src:url(fonts/PlayfairDisplay-Bold.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Playfair Bold";src:url(fonts/web/PlayfairDisplay-Bold.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Playfair Italic";src:url(fonts/PlayfairDisplay-Italic.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Playfair Italic";src:url(fonts/web/PlayfairDisplay-Italic.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Cinzel Bold";src:url(fonts/Cinzel-Bold.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Cinzel Bold";src:url(fonts/web/Cinzel-Bold.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Lora Italic";src:url(fonts/Lora-Italic.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Lora Italic";src:url(fonts/web/Lora-Italic.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Great Vibes";src:url(fonts/GreatVibes-Regular.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Great Vibes";src:url(fonts/web/GreatVibes-Regular.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Pinyon Script";src:url(fonts/PinyonScript-Regular.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Pinyon Script";src:url(fonts/web/PinyonScript-Regular.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Allura";src:url(fonts/Allura-Regular.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Allura";src:url(fonts/web/Allura-Regular.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"CQ Dancing Script";src:url(fonts/DancingScript-Bold.ttf) format("truetype");font-display:swap}
+@font-face{font-family:"CQ Dancing Script";src:url(fonts/web/DancingScript-Bold.woff2) format("woff2");font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"Poppins";src:url(fonts/Poppins-Regular.ttf) format("truetype");font-weight:400;font-display:swap}
+@font-face{font-family:"Poppins";src:url(fonts/web/Poppins-Regular.woff2) format("woff2");font-weight:400;font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"Poppins";src:url(fonts/Poppins-Medium.ttf) format("truetype");font-weight:500;font-display:swap}
+@font-face{font-family:"Poppins";src:url(fonts/web/Poppins-Medium.woff2) format("woff2");font-weight:500;font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
+@font-face{font-family:"Poppins";src:url(fonts/Poppins-Bold.ttf) format("truetype");font-weight:700;font-display:swap}
+@font-face{font-family:"Poppins";src:url(fonts/web/Poppins-Bold.woff2) format("woff2");font-weight:700;font-display:swap;unicode-range:U+0000-024F,U+0259,U+02B0-02FF,U+0300-036F,U+1E00-1EFF,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2715}
 
 :root{
   --ink:#1B2140;--muted:#5A6088;--faint:#8A90AE;--line:#E3E6F0;--line2:#D3D8E8;

@@ -4,6 +4,7 @@ Run locally:   python app.py        (then open http://localhost:5000/admin)
 Production:    gunicorn -w 2 -b 0.0.0.0:8000 "app:create_app()"
 """
 import csv
+import hashlib
 import hmac
 import io
 import logging
@@ -35,6 +36,7 @@ from db import get_db, init_db, now_iso
 # Windows can map .js/.css to text/plain in the registry; with nosniff the browser then refuses them
 mimetypes.add_type("text/javascript", ".js")
 mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("font/woff2", ".woff2")
 
 CODE_ALPHABET ="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 EMAIL_RE = re.compile(r"^[^@\s<>\"']+@[^@\s<>\"']+\.[A-Za-z]{2,}$")
@@ -157,6 +159,11 @@ def safe_filename(full_name):
     return "".join(ch if ch.isalnum() else "_" for ch in full_name).strip("_")[:60] or "Certificate"
 
 
+def thumb_of(preview_file):
+    """File name of the small thumbnail made from a design preview (event-1-ab12-preview.png -> ...-thumb.jpg)."""
+    return preview_file.rsplit("-preview", 1)[0] + "-thumb.jpg" if preview_file else None
+
+
 def paths(app):
     d = Path(app.config["DATA_DIR"])
     return d / "templates", d / "certs"
@@ -247,8 +254,32 @@ def create_app(overrides=None):
             if not sent or not hmac.compare_digest(sent, session.get("_csrf", "")):
                 abort(400, "Your form expired. Go back, refresh the page and try again.")
 
+    # Static files (styles, scripts, fonts, logo) get ?v=<content hash> in their address, so browsers can keep
+    # them for a year and still fetch the new copy the moment a file changes.
+    static_versions = {}
+
+    def static_version(filename):
+        if filename not in static_versions:
+            try:
+                data = (Path(app.static_folder) / filename).read_bytes()
+                static_versions[filename] = hashlib.md5(data, usedforsecurity=False).hexdigest()[:10]
+            except OSError:
+                static_versions[filename] = ""
+        return static_versions[filename]
+
+    @app.url_defaults
+    def add_static_version(endpoint, values):
+        if endpoint == "static" and "filename" in values and "v" not in values:
+            v = static_version(values["filename"])
+            if v:
+                values["v"] = v
+
     @app.after_request
     def headers(resp):
+        if request.endpoint == "static" and resp.status_code in (200, 304):
+            # versioned files never change; unversioned ones (fonts named inside app.css) rarely do
+            resp.headers["Cache-Control"] = ("public, max-age=31536000, immutable" if request.args.get("v")
+                                             else "public, max-age=604800")
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         resp.headers.setdefault("X-Frame-Options", "DENY")
@@ -535,7 +566,7 @@ def create_app(overrides=None):
                         errors["template"] = str(exc)
                         return render_template("admin/session_form.html", ev=ev, form=form, errors=errors,
                                    done_samples=DONE_SAMPLES)
-                    old = [ev["template_file"], ev["preview_file"]] if ev else []
+                    old = [ev["template_file"], ev["preview_file"], thumb_of(ev["preview_file"])] if ev else []
                     db.execute("UPDATE events SET template_file=?, template_kind=?, page_w=?, page_h=?, preview_file=?, "
                                "design_updated_at=? WHERE id=?", (info["template_file"], info["template_kind"],
                                                                   info["page_w"], info["page_h"], info["preview_file"],
@@ -594,7 +625,30 @@ def create_app(overrides=None):
         ev = event_by_id(event_id)
         if not ev["preview_file"]:
             abort(404)
-        return send_file(tpl_dir / ev["preview_file"], mimetype="image/png", max_age=3600)
+        resp = send_file(tpl_dir / ev["preview_file"], mimetype="image/png", max_age=3600)
+        resp.cache_control.public = False
+        resp.cache_control.private = True  # admin-only: browsers may keep it, shared caches may not
+        return resp
+
+    @app.get("/admin/sessions/<int:event_id>/thumb.jpg")
+    @admin_required
+    def admin_template_thumb(event_id):
+        """A small copy of the design for the session cards, made the first time it's asked for."""
+        ev = event_by_id(event_id)
+        if not ev["preview_file"]:
+            abort(404)
+        thumb = tpl_dir / thumb_of(ev["preview_file"])
+        if not thumb.exists():
+            img = Image.open(tpl_dir / ev["preview_file"]).convert("RGB")
+            img.thumbnail((560, 560), Image.LANCZOS)  # cards show it about 280 px wide; twice that stays sharp
+            tmp = thumb.with_name(thumb.name + f".{secrets.token_hex(3)}.tmp")
+            img.save(tmp, "JPEG", quality=82, optimize=True, progressive=True)
+            tmp.replace(thumb)  # two requests at once never see a half-written file
+        # the address changes whenever the design does (?v=), so the browser can keep it
+        resp = send_file(thumb, mimetype="image/jpeg", max_age=31536000 if request.args.get("v") else 3600)
+        resp.cache_control.public = False
+        resp.cache_control.private = True
+        return resp
 
     @app.get("/admin/sessions/<int:event_id>/sample.pdf")
     @admin_required
@@ -698,7 +752,7 @@ def create_app(overrides=None):
         for p in db.execute("SELECT pdf_file FROM participants WHERE event_id=?", (event_id,)):
             if p["pdf_file"]:
                 (cert_dir / p["pdf_file"]).unlink(missing_ok=True)
-        for f in (ev["template_file"], ev["preview_file"]):
+        for f in (ev["template_file"], ev["preview_file"], thumb_of(ev["preview_file"])):
             if f:
                 (tpl_dir / f).unlink(missing_ok=True)
         db.execute("DELETE FROM participants WHERE event_id=?", (event_id,))

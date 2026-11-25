@@ -126,10 +126,24 @@
   showSample();
   const chosen = markFont();
   if (chosen) $("fontpick").scrollTop = chosen.offsetTop - 40;  // only the list scrolls, not the page
+  // each font in the list is downloaded only once it scrolls into view, not all of them up front
+  const showFont = (p) => {
+    const s = p.querySelector(".fp-sample");
+    if (!s.style.fontFamily) s.style.fontFamily = `"${s.dataset.font}", sans-serif`;
+  };
+  if ("IntersectionObserver" in window) {
+    const seen = new IntersectionObserver((entries) => entries.forEach(e => {
+      if (e.isIntersecting) { showFont(e.target); seen.unobserve(e.target); }
+    }), { root: $("fontpick"), rootMargin: "120px 0px" });
+    picks.forEach(p => seen.observe(p));
+  } else {
+    picks.forEach(showFont);
+  }
+  // the name preview is measured in the chosen font, so redraw whenever a font finishes loading. (Not
+  // document.fonts.load(): that downloads every file of the font, including the full .ttf fallback.)
   if (document.fonts) {
-    Promise.all([...font.options].map(o => document.fonts.load(`40px "${o.dataset.css}"`).catch(() => null)))
-      .then(layout);
     document.fonts.addEventListener && document.fonts.addEventListener("loadingdone", layout);
+    document.fonts.ready.then(layout);
   }
 
   $("fpDefault").addEventListener("click", (e) => {

@@ -59,7 +59,7 @@
 {% for e in events %}
   <div class="card ev">
     <a class="thumb" href="{{ url_for('admin_participants', event_id=e.id) }}">
-      {% if e.preview_file %}<img src="{{ url_for('admin_template_png', event_id=e.id) }}" alt="">{% else %}<span class="faint small">No design uploaded</span>{% endif %}
+      {% if e.preview_file %}<img src="{{ url_for('admin_template_thumb', event_id=e.id, v=e.preview_file) }}" alt="" loading="lazy">{% else %}<span class="faint small">No design uploaded</span>{% endif %}
     </a>
     <div class="body">
       <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:nowrap">
