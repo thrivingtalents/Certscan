@@ -178,7 +178,7 @@ input[type=color]{width:42px;height:42px;border:1.5px solid var(--line2);border-
   .shell{grid-template-columns:1fr}
   .side{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap;gap:6px;padding:12px}
   .orglogo{width:120px;margin:0 10px 0 0;padding:6px 9px}.orglogo span{display:none}.nav{display:flex;gap:4px}.side .btn{width:auto}
-  .sidesearch{order:5;flex-basis:100%;margin:4px 0 0}.sidefoot{margin:0 0 0 auto;display:flex;align-items:center;gap:6px}.sidefoot .nav a{margin:0}
+  .sidefoot{margin:0 0 0 auto;display:flex;align-items:center;gap:6px}.sidefoot .nav a{margin:0}
   .main{padding:20px 16px 50px}
   .editor,.qrwrap{grid-template-columns:1fr}
 }
@@ -219,16 +219,12 @@ td input[type=checkbox],th input[type=checkbox]{width:16px;height:16px;accent-co
 .pwtoggle[aria-pressed=true] .eye-hide{display:inline}
 
 /* ---------- search, client names ---------- */
-.sidesearch{position:relative;margin:0 2px 16px}
-.sidesearch svg{position:absolute;left:10px;bottom:11px;color:#8A90AE;pointer-events:none}
-.sidelbl{display:block;font-size:11px;font-weight:600;letter-spacing:.4px;color:#8A90AE;margin:0 0 5px 2px}
-.sidesearch input[type=search]{height:38px;padding-left:33px;background:#1D2447;border-color:#2E376A;color:#fff;font-size:13px}
-.sidesearch input::placeholder{color:#8A90AE}
-.sidesearch input:focus{border-color:var(--accent);box-shadow:none}
 .sidefoot .nav{border-top:1px solid #2E376A;padding-top:10px}
 .nav a svg{flex:none;opacity:.85}
-.pagesearch{flex-wrap:nowrap;width:min(420px,100%)}
-.pagesearch input{flex:1;min-width:0}
+.pagesearch{display:flex;gap:10px;align-items:center;margin:-6px 0 24px}
+.searchbox{position:relative;flex:1;min-width:0}
+.searchbox svg{position:absolute;left:14px;top:50%;margin-top:-9px;color:var(--faint);pointer-events:none}
+.searchbox input[type=search]{height:46px;padding-left:42px;font-size:15px;border-radius:12px}
 .sectitle{font-size:15px;margin:0 0 10px;color:var(--muted)}
 .ev .client{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;font-weight:500;color:var(--ink)}
 .ev .client svg{flex:none;color:var(--accent-ink)}

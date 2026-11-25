@@ -3,13 +3,21 @@
 {% block main %}
 <div class="head">
   {% if q %}
-  <div><h1>Results for “{{ q }}”</h1><div class="sub">{{ found|length }}{{ '+' if found|length >= 200 }} certificate{{ '' if found|length == 1 else 's' }} · {{ events|length }} session{{ '' if events|length == 1 else 's' }} · <a href="{{ url_for('admin_home') }}">Clear search</a></div></div>
+  <div><h1>Results for “{{ q }}”</h1><div class="sub">{{ found|length }}{{ '+' if found|length >= 200 }} certificate{{ '' if found|length == 1 else 's' }} · {{ events|length }} session{{ '' if events|length == 1 else 's' }}</div></div>
   {% else %}
   <div><h1>Sessions</h1><div class="sub">{{ events|length }} session{{ '' if events|length == 1 else 's' }} · {{ total_sent }} certificates sent{% if not smtp %} · <a href="{{ url_for('admin_email') }}">Outbox mode: emails aren't being sent yet</a>{% endif %}</div></div>
   {% endif %}
   <div class="spacer"></div>
   <a class="btn" href="{{ url_for('admin_new') }}">+ New session</a>
 </div>
+<form class="pagesearch" method="get" action="{{ url_for('admin_home') }}" role="search">
+  <div class="searchbox">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    <input type="search" name="q" value="{{ q }}" placeholder="Find a certificate by participant name, email, session or client" aria-label="Find a certificate by participant name, email, session or client">
+  </div>
+  <button class="btn">Search</button>
+  {% if q %}<a class="btn o" href="{{ url_for('admin_home') }}">Clear</a>{% endif %}
+</form>
 
 {% if q %}
 <h2 class="sectitle">Certificates</h2>
